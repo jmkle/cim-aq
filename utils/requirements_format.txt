@@ -1,0 +1,12 @@
+# Python formatting
+yapf>=0.43.0
+# Python import organization
+isort>=6.0.1
+# Shell formatting
+beautysh>=6.2.1
+# Markdown formatting
+mdformat>=0.7.22
+# YAML formatting
+yamllint>=1.37.1
+# Progress bar
+tqdm>=4.67.1

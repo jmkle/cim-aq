@@ -1,0 +1,39 @@
+extends: default
+
+rules:
+  # Allow longer lines for URLs and other long content
+  line-length:
+    max: 120
+    level: warning
+
+  # Allow 2 or 4 space indentation
+  indentation:
+    spaces: consistent
+    indent-sequences: true
+    check-multi-line-strings: false
+
+  # Allow empty lines for readability
+  empty-lines:
+    max: 2
+    max-start: 1
+    max-end: 1
+
+  # More lenient comment formatting
+  comments:
+    min-spaces-from-content: 1
+
+  # Allow truthy values like 'yes', 'on', etc.
+  truthy:
+    allowed-values: ["true", "false", "yes", "no", "on", "off"]
+    check-keys: true
+
+  # Allow longer document start markers
+  document-start: disable
+
+  # More flexible key ordering
+  key-ordering: disable
+
+  # Allow quoted strings
+  quoted-strings:
+    quote-type: any
+    required: false
