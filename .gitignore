@@ -1,0 +1,12 @@
+# Python
+.venv
+__pycache__
+
+# Data and Models
+data
+checkpoint*
+save*
+
+# Archives and Binary Files
+*.tar
+*.npy
