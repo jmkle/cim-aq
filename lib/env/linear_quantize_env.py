@@ -18,8 +18,18 @@ from lib.utils.quantize_utils import QConv2d, QLinear, calibrate
 
 
 class LinearQuantizeEnv:
-    def __init__(self, model, pretrained_model, data, data_root, compress_ratio, args, n_data_worker=16,
-                 batch_size=256, float_bit=8, is_model_pruned=False):
+
+    def __init__(self,
+                 model,
+                 pretrained_model,
+                 data,
+                 data_root,
+                 compress_ratio,
+                 args,
+                 n_data_worker=16,
+                 batch_size=256,
+                 float_bit=8,
+                 is_model_pruned=False):
         # default setting
         self.quantizable_layer_types = [QConv2d, QLinear]
 
@@ -31,7 +41,10 @@ class LinearQuantizeEnv:
         self.strategy = []  # quantization strategy
 
         self.finetune_lr = args.finetune_lr
-        self.optimizer = optim.SGD(model.parameters(), lr=args.finetune_lr, momentum=0.9, weight_decay=1e-5)
+        self.optimizer = optim.SGD(model.parameters(),
+                                   lr=args.finetune_lr,
+                                   momentum=0.9,
+                                   weight_decay=1e-5)
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.pretrained_model = pretrained_model
         self.n_data_worker = n_data_worker
@@ -86,8 +99,9 @@ class LinearQuantizeEnv:
 
         # restore weight
         self.reset()
-        print('=> original acc: {:.3f}% on split dataset(train: %7d, val: %7d )'.format(self.org_acc,
-                                                                                        self.train_size, self.val_size))
+        print(
+            '=> original acc: {:.3f}% on split dataset(train: %7d, val: %7d )'.
+            format(self.org_acc, self.train_size, self.val_size))
         print('=> original cost: {:.4f}'.format(self._org_cost()))
 
     def adjust_learning_rate(self):
@@ -102,7 +116,9 @@ class LinearQuantizeEnv:
             self.last_weight_action = action
         else:
             self.last_activation_action = action
-            self.strategy.append([self.last_weight_action, self.last_activation_action])  # save action to strategy
+            self.strategy.append(
+                [self.last_weight_action,
+                 self.last_activation_action])  # save action to strategy
 
         # all the actions are made
         if self._is_final_layer() and (not self.action_radio_button):
@@ -111,10 +127,14 @@ class LinearQuantizeEnv:
             cost = self._cur_cost()
             cost_ratio = cost / self._org_cost()
 
-            self._set_mixed_precision(quantizable_idx=self.quantizable_idx, strategy=self.strategy)
+            self._set_mixed_precision(quantizable_idx=self.quantizable_idx,
+                                      strategy=self.strategy)
             self.model = calibrate(self.model, self.train_loader)
             if self.finetune_flag:
-                acc = self._finetune(self.train_loader, self.model, epochs=self.finetune_epoch, verbose=False)
+                acc = self._finetune(self.train_loader,
+                                     self.model,
+                                     epochs=self.finetune_epoch,
+                                     verbose=False)
                 # train_acc = self._finetune(self.train_loader, self.model, epochs=self.finetune_epoch, verbose=False)
                 # acc = self._validate(self.val_loader, self.model)
             else:
@@ -123,14 +143,20 @@ class LinearQuantizeEnv:
             # reward = self.reward(acc, w_size_ratio)
             reward = self.reward(acc)
 
-            info_set = {'cost_ratio': cost_ratio, 'accuracy': acc, 'cost': cost}
+            info_set = {
+                'cost_ratio': cost_ratio,
+                'accuracy': acc,
+                'cost': cost
+            }
 
             if reward > self.best_reward:
                 self.best_reward = reward
-                prGreen('New best policy: {}, reward: {:.3f}, acc: {:.3f}, cost_ratio: {:.3f}'.format(
-                    self.strategy, self.best_reward, acc, cost_ratio))
+                prGreen(
+                    'New best policy: {}, reward: {:.3f}, acc: {:.3f}, cost_ratio: {:.3f}'
+                    .format(self.strategy, self.best_reward, acc, cost_ratio))
 
-            obs = self.layer_embedding[self.cur_ind, :].copy()  # actually the same as the last state
+            obs = self.layer_embedding[
+                self.cur_ind, :].copy()  # actually the same as the last state
             done = True
             self.action_radio_button = not self.action_radio_button
             return obs, reward, done, info_set
@@ -145,8 +171,10 @@ class LinearQuantizeEnv:
         else:
             self.cur_ind += 1  # the index of next layer
             self.layer_embedding[self.cur_ind][-1] = 1.0
-        self.layer_embedding[self.cur_ind][-2] = float(action) / float(self.max_bit)
-        self.layer_embedding[self.cur_ind][-1] = float(self.action_radio_button)
+        self.layer_embedding[self.cur_ind][-2] = float(action) / float(
+            self.max_bit)
+        self.layer_embedding[self.cur_ind][-1] = float(
+            self.action_radio_button)
         # build next state (in-place modify)
         obs = self.layer_embedding[self.cur_ind, :].copy()
         self.action_radio_button = not self.action_radio_button
@@ -161,7 +189,10 @@ class LinearQuantizeEnv:
     def reset(self):
         # restore env by loading the pretrained model
         self.model.load_state_dict(self.pretrained_model, strict=False)
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.finetune_lr, momentum=0.9, weight_decay=4e-5)
+        self.optimizer = optim.SGD(self.model.parameters(),
+                                   lr=self.finetune_lr,
+                                   momentum=0.9,
+                                   weight_decay=4e-5)
         self.cur_ind = 0
         self.strategy = []  # quantization strategy
         obs = self.layer_embedding[0].copy()
@@ -174,19 +205,21 @@ class LinearQuantizeEnv:
         target = self.compress_ratio * self._org_cost()
         min_cost = 0
         for i, n_bit in enumerate(self.strategy):
-            min_cost += self.cost_lookuptable[i][int(self.min_bit-1)][int(self.min_bit-1)]
+            min_cost += self.cost_lookuptable[i][int(self.min_bit -
+                                                     1)][int(self.min_bit - 1)]
 
-        print('before action_wall: ', self.strategy, min_cost, self._cur_cost())
+        print('before action_wall: ', self.strategy, min_cost,
+              self._cur_cost())
         while min_cost < self._cur_cost() and target < self._cur_cost():
             # print('current: ', self.strategy, min_cost, self._cur_cost())
             for i, n_bit in enumerate(reversed(self.strategy)):
                 if n_bit[1] > self.min_bit:
-                    self.strategy[-(i+1)][1] -= 1
+                    self.strategy[-(i + 1)][1] -= 1
                 self._keep_first_last_layer()
                 if target >= self._cur_cost():
                     break
                 if n_bit[0] > self.min_bit:
-                    self.strategy[-(i+1)][0] -= 1
+                    self.strategy[-(i + 1)][0] -= 1
                 self._keep_first_last_layer()
                 if target >= self._cur_cost():
                     break
@@ -213,7 +246,10 @@ class LinearQuantizeEnv:
     def _set_mixed_precision(self, quantizable_idx, strategy):
         assert len(quantizable_idx) == len(strategy), \
             'You should provide the same number of bit setting as layer list for weight quantization!'
-        quantize_layer_bit_dict = {n: b for n, b in zip(quantizable_idx, strategy)}
+        quantize_layer_bit_dict = {
+            n: b
+            for n, b in zip(quantizable_idx, strategy)
+        }
         for i, layer in enumerate(self.model.modules()):
             if i not in quantizable_idx:
                 continue
@@ -225,13 +261,15 @@ class LinearQuantizeEnv:
         cur_cost = 0.
         # quantized
         for i, n_bit in enumerate(self.strategy):
-            cur_cost += self.cost_lookuptable[i, n_bit[0]-1, n_bit[1]-1]
+            cur_cost += self.cost_lookuptable[i, n_bit[0] - 1, n_bit[1] - 1]
         return cur_cost
 
     def _org_cost(self):
         org_cost = 0
         for i in range(self.cost_lookuptable.shape[0]):
-            org_cost += self.cost_lookuptable[i, int(self.float_bit-1), int(self.float_bit-1)]
+            org_cost += self.cost_lookuptable[i,
+                                              int(self.float_bit - 1),
+                                              int(self.float_bit - 1)]
         return org_cost
 
     def _min_cost(self):
@@ -240,13 +278,20 @@ class LinearQuantizeEnv:
             if i == 0 or i == (self.cost_lookuptable.shape[0] - 1):
                 min_cost += self.cost_lookuptable[i, -1, -1]
             else:
-                min_cost += self.cost_lookuptable[i, int(self.min_bit - 1), int(self.min_bit - 1)]
+                min_cost += self.cost_lookuptable[i,
+                                                  int(self.min_bit - 1),
+                                                  int(self.min_bit - 1)]
         return min_cost
 
     def _init_data(self):
         self.train_loader, self.val_loader, n_class = get_split_train_dataset(
-            self.data_type, self.batch_size, self.n_data_worker, data_root=self.data_root,
-            val_size=self.val_size, train_size=self.train_size, for_inception=self.is_inception)
+            self.data_type,
+            self.batch_size,
+            self.n_data_worker,
+            data_root=self.data_root,
+            val_size=self.val_size,
+            train_size=self.train_size,
+            for_inception=self.is_inception)
 
     def _build_index(self):
         self.quantizable_idx = []
@@ -270,13 +315,14 @@ class LinearQuantizeEnv:
             m = module_list[ind]
             this_state = []
             if type(m) == nn.Conv2d or type(m) == QConv2d:
-                this_state.append([int(m.in_channels == m.groups)])  # layer type, 1 for conv_dw
+                this_state.append([int(m.in_channels == m.groups)
+                                   ])  # layer type, 1 for conv_dw
                 this_state.append([m.in_channels])  # in channels
                 this_state.append([m.out_channels])  # out channels
                 this_state.append([m.stride[0]])  # stride
                 this_state.append([m.kernel_size[0]])  # kernel size
                 this_state.append([np.prod(m.weight.size())])  # weight size
-                this_state.append([m.in_w*m.in_h])  # input feature_map_size
+                this_state.append([m.in_w * m.in_h])  # input feature_map_size
             elif type(m) == nn.Linear or type(m) == QLinear:
                 this_state.append([0.])  # layer type, 0 for fc
                 this_state.append([m.in_features])  # in channels
@@ -284,22 +330,25 @@ class LinearQuantizeEnv:
                 this_state.append([0.])  # stride
                 this_state.append([1.])  # kernel size
                 this_state.append([np.prod(m.weight.size())])  # weight size
-                this_state.append([m.in_w*m.in_h])  # input feature_map_size
+                this_state.append([m.in_w * m.in_h])  # input feature_map_size
 
             this_state.append([i])  # index
             this_state.append([1.])  # bits, 1 is the max bit
-            this_state.append([1.])  # action radio button, 1 is the weight action
+            this_state.append(
+                [1.])  # action radio button, 1 is the weight action
             layer_embedding.append(np.hstack(this_state))
 
         # normalize the state
         layer_embedding = np.array(layer_embedding, 'float')
-        print('=> shape of embedding (n_layer * n_dim): {}'.format(layer_embedding.shape))
+        print('=> shape of embedding (n_layer * n_dim): {}'.format(
+            layer_embedding.shape))
         assert len(layer_embedding.shape) == 2, layer_embedding.shape
         for i in range(layer_embedding.shape[1]):
             fmin = min(layer_embedding[:, i])
             fmax = max(layer_embedding[:, i])
             if fmax - fmin > 0:
-                layer_embedding[:, i] = (layer_embedding[:, i] - fmin) / (fmax - fmin)
+                layer_embedding[:, i] = (layer_embedding[:, i] -
+                                         fmin) / (fmax - fmin)
 
         self.layer_embedding = layer_embedding
 
@@ -391,7 +440,8 @@ class LinearQuantizeEnv:
             self.adjust_learning_rate()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' % (losses.avg, top1.avg, top5.avg, t2-t1))
+            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
+                  (losses.avg, top1.avg, top5.avg, t2 - t1))
         return best_acc
 
     def _validate(self, val_loader, model, verbose=False):
@@ -446,9 +496,9 @@ class LinearQuantizeEnv:
             bar.finish()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' % (losses.avg, top1.avg, top5.avg, t2-t1))
+            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
+                  (losses.avg, top1.avg, top5.avg, t2 - t1))
         if self.use_top5:
             return top5.avg
         else:
             return top1.avg
-
