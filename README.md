@@ -136,3 +136,22 @@ bash run/run_linear_quantize_eval.sh
 | mobilenetv2 (original)    |       1.0      |     72.05    |    90.49     |
 | mobilenetv2 (0.6x latency)|       0.6      |     71.23    |    90.00     |
 
+## Code Formatting
+
+This repository uses automated code formatting to ensure consistent style. The formatting workflow automatically:
+
+- **Checks** code formatting on every push and pull request
+- **Creates PRs** with formatting fixes for the main branch  
+- **Commits** formatting fixes directly to feature branches
+
+### Manual Formatting
+
+To format code manually:
+
+```bash
+# Check formatting
+cd utils && python format.py
+
+# Fix formatting issues  
+cd utils && python format.py --fix
+```
