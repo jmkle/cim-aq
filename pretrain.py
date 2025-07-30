@@ -9,14 +9,13 @@ import random
 import shutil
 import time
 
+import models as customized_models
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
-
-import models as customized_models
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -25,13 +24,12 @@ except:
     print('use tensorboardX')
     from tensorboardX import SummaryWriter
 
-from progress.bar import Bar
-
 from lib.utils.data_utils import get_dataset
 from lib.utils.quantize_utils import (QConv2d, QLinear, calibrate, dorefa,
                                       kmeans_update_model, quantize_model,
                                       set_fix_weight)
 from lib.utils.utils import AverageMeter, Logger, accuracy
+from progress.bar import Bar
 
 # Models
 default_model_names = sorted(name for name in models.__dict__

@@ -3,7 +3,6 @@ import os
 
 import torch
 import torch.nn as nn
-
 from lib.utils.quantize_utils import QConv2d, QLinear
 
 __all__ = ['MobileNetV2', 'mobilenetv2', 'qmobilenetv2']

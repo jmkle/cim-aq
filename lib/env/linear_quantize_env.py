@@ -11,11 +11,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from progress.bar import Bar
-
 from lib.utils.data_utils import get_split_train_dataset
 from lib.utils.quantize_utils import QConv2d, QLinear, calibrate
 from lib.utils.utils import AverageMeter, accuracy, measure_model, prGreen
+from progress.bar import Bar
 
 
 class LinearQuantizeEnv:
