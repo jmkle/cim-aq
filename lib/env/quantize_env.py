@@ -2,23 +2,34 @@
 # Kuan Wang*, Zhijian Liu*, Yujun Lin*, Ji Lin, Song Han
 # {kuanwang, zhijian, yujunlin, jilin, songhan}@mit.edu
 
-import time
 import math
-import torch
-import numpy as np
-import torch.nn as nn
+import time
 from copy import deepcopy
+
+import numpy as np
+import torch
+import torch.nn as nn
 import torch.optim as optim
 from progress.bar import Bar
 
-from lib.utils.utils import AverageMeter, accuracy, prGreen, measure_model
 from lib.utils.data_utils import get_split_train_dataset
-from lib.utils.quantize_utils import quantize_model, kmeans_update_model
+from lib.utils.quantize_utils import kmeans_update_model, quantize_model
+from lib.utils.utils import AverageMeter, accuracy, measure_model, prGreen
 
 
 class QuantizeEnv:
-    def __init__(self, model, pretrained_model, data, data_root, compress_ratio, args, n_data_worker=16,
-                 batch_size=256, float_bit=32, is_model_pruned=False):
+
+    def __init__(self,
+                 model,
+                 pretrained_model,
+                 data,
+                 data_root,
+                 compress_ratio,
+                 args,
+                 n_data_worker=16,
+                 batch_size=256,
+                 float_bit=32,
+                 is_model_pruned=False):
         # default setting
         self.quantizable_layer_types = [nn.Conv2d, nn.Linear]
 
@@ -29,7 +40,10 @@ class QuantizeEnv:
         self.strategy = []  # quantization strategy
 
         self.finetune_lr = args.finetune_lr
-        self.optimizer = optim.SGD(model.parameters(), lr=args.finetune_lr, momentum=0.9, weight_decay=1e-5)
+        self.optimizer = optim.SGD(model.parameters(),
+                                   lr=args.finetune_lr,
+                                   momentum=0.9,
+                                   weight_decay=1e-5)
         self.criterion = nn.CrossEntropyLoss().cuda()
         self.pretrained_model = pretrained_model
         self.n_data_worker = n_data_worker
@@ -77,10 +91,12 @@ class QuantizeEnv:
 
         # restore weight
         self.reset()
-        print('=> original acc: {:.3f}% on split dataset(train: %7d, val: %7d )'.format(self.org_acc,
-                                                                                        self.train_size, self.val_size))
-        print('=> original #param: {:.4f}, model size: {:.4f} MB'.format(sum(self.wsize_list) * 1. / 1e6,
-                                                                         sum(self.wsize_list) * self.float_bit / 8e6))
+        print(
+            '=> original acc: {:.3f}% on split dataset(train: %7d, val: %7d )'.
+            format(self.org_acc, self.train_size, self.val_size))
+        print('=> original #param: {:.4f}, model size: {:.4f} MB'.format(
+            sum(self.wsize_list) * 1. / 1e6,
+            sum(self.wsize_list) * self.float_bit / 8e6))
 
     def adjust_learning_rate(self):
         for param_group in self.optimizer.param_groups:
@@ -99,12 +115,22 @@ class QuantizeEnv:
             w_size = self._cur_weight()
             w_size_ratio = self._cur_weight() / self._org_weight()
 
-            centroid_label_dict = quantize_model(self.model, self.quantizable_idx, self.strategy,
-                                                 mode='cpu', quantize_bias=False, centroids_init='k-means++',
-                                                 is_pruned=self.is_model_pruned, max_iter=3)
+            centroid_label_dict = quantize_model(
+                self.model,
+                self.quantizable_idx,
+                self.strategy,
+                mode='cpu',
+                quantize_bias=False,
+                centroids_init='k-means++',
+                is_pruned=self.is_model_pruned,
+                max_iter=3)
             if self.finetune_flag:
-                train_acc = self._kmeans_finetune(self.train_loader, self.model, self.quantizable_idx,
-                                                  centroid_label_dict, epochs=self.finetune_epoch, verbose=False)
+                train_acc = self._kmeans_finetune(self.train_loader,
+                                                  self.model,
+                                                  self.quantizable_idx,
+                                                  centroid_label_dict,
+                                                  epochs=self.finetune_epoch,
+                                                  verbose=False)
                 acc = self._validate(self.val_loader, self.model)
             else:
                 acc = self._validate(self.val_loader, self.model)
@@ -112,14 +138,21 @@ class QuantizeEnv:
             # reward = self.reward(acc, w_size_ratio)
             reward = self.reward(acc)
 
-            info_set = {'w_ratio': w_size_ratio, 'accuracy': acc, 'w_size': w_size}
+            info_set = {
+                'w_ratio': w_size_ratio,
+                'accuracy': acc,
+                'w_size': w_size
+            }
 
             if reward > self.best_reward:
                 self.best_reward = reward
-                prGreen('New best policy: {}, reward: {:.3f}, acc: {:.3f}, w_ratio: {:.3f}'.format(
-                    self.strategy, self.best_reward, acc, w_size_ratio))
+                prGreen(
+                    'New best policy: {}, reward: {:.3f}, acc: {:.3f}, w_ratio: {:.3f}'
+                    .format(self.strategy, self.best_reward, acc,
+                            w_size_ratio))
 
-            obs = self.layer_embedding[self.cur_ind, :].copy()  # actually the same as the last state
+            obs = self.layer_embedding[
+                self.cur_ind, :].copy()  # actually the same as the last state
             done = True
             return obs, reward, done, info_set
 
@@ -142,7 +175,10 @@ class QuantizeEnv:
     def reset(self):
         # restore env by loading the pretrained model
         self.model.load_state_dict(self.pretrained_model, strict=False)
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.finetune_lr, momentum=0.9, weight_decay=4e-5)
+        self.optimizer = optim.SGD(self.model.parameters(),
+                                   lr=self.finetune_lr,
+                                   momentum=0.9,
+                                   weight_decay=4e-5)
         self.cur_ind = 0
         self.strategy = []  # quantization strategy
         obs = self.layer_embedding[0].copy()
@@ -159,7 +195,7 @@ class QuantizeEnv:
         while min_weight < self._cur_weight() and target < self._cur_weight():
             for i, n_bit in enumerate(reversed(self.strategy)):
                 if n_bit > self.min_bit:
-                    self.strategy[-(i+1)] -= 1
+                    self.strategy[-(i + 1)] -= 1
                 if target >= self._cur_weight():
                     break
         print('=> Final action list: {}'.format(self.strategy))
@@ -194,8 +230,13 @@ class QuantizeEnv:
 
     def _init_data(self):
         self.train_loader, self.val_loader, n_class = get_split_train_dataset(
-            self.data_type, self.batch_size, self.n_data_worker, data_root=self.data_root,
-            val_size=self.val_size, train_size=self.train_size, for_inception=self.is_inception)
+            self.data_type,
+            self.batch_size,
+            self.n_data_worker,
+            data_root=self.data_root,
+            val_size=self.val_size,
+            train_size=self.train_size,
+            for_inception=self.is_inception)
 
     def _build_index(self):
         self.quantizable_idx = []
@@ -217,7 +258,10 @@ class QuantizeEnv:
                     self.wsize_list.append(m.weight.data.numel())
                 else:  # the model is pruned, only consider non-zeros items
                     self.wsize_list.append(torch.sum(m.weight.data.ne(0)))
-        self.wsize_dict = {i: s for i, s in zip(self.quantizable_idx, self.wsize_list)}
+        self.wsize_dict = {
+            i: s
+            for i, s in zip(self.quantizable_idx, self.wsize_list)
+        }
 
     def _get_latency_list(self):
         # use simulator to get the latency
@@ -241,13 +285,14 @@ class QuantizeEnv:
             m = module_list[ind]
             this_state = []
             if type(m) == nn.Conv2d or type(m) == nn.Conv2d:
-                this_state.append([int(m.in_channels == m.groups)])  # layer type, 1 for conv_dw
+                this_state.append([int(m.in_channels == m.groups)
+                                   ])  # layer type, 1 for conv_dw
                 this_state.append([m.in_channels])  # in channels
                 this_state.append([m.out_channels])  # out channels
                 this_state.append([m.stride[0]])  # stride
                 this_state.append([m.kernel_size[0]])  # kernel size
                 this_state.append([np.prod(m.weight.size())])  # weight size
-                this_state.append([m.in_w*m.in_h])  # input feature_map_size
+                this_state.append([m.in_w * m.in_h])  # input feature_map_size
             elif type(m) == nn.Linear or type(m) == nn.Linear:
                 this_state.append([0.])  # layer type, 0 for fc
                 this_state.append([m.in_features])  # in channels
@@ -255,7 +300,7 @@ class QuantizeEnv:
                 this_state.append([0.])  # stride
                 this_state.append([1.])  # kernel size
                 this_state.append([np.prod(m.weight.size())])  # weight size
-                this_state.append([m.in_w*m.in_h])  # input feature_map_size
+                this_state.append([m.in_w * m.in_h])  # input feature_map_size
 
             this_state.append([i])  # index
             this_state.append([4.])  # bits
@@ -263,17 +308,25 @@ class QuantizeEnv:
 
         # normalize the state
         layer_embedding = np.array(layer_embedding, 'float')
-        print('=> shape of embedding (n_layer * n_dim): {}'.format(layer_embedding.shape))
+        print('=> shape of embedding (n_layer * n_dim): {}'.format(
+            layer_embedding.shape))
         assert len(layer_embedding.shape) == 2, layer_embedding.shape
         for i in range(layer_embedding.shape[1]):
             fmin = min(layer_embedding[:, i])
             fmax = max(layer_embedding[:, i])
             if fmax - fmin > 0:
-                layer_embedding[:, i] = (layer_embedding[:, i] - fmin) / (fmax - fmin)
+                layer_embedding[:, i] = (layer_embedding[:, i] -
+                                         fmin) / (fmax - fmin)
 
         self.layer_embedding = layer_embedding
 
-    def _kmeans_finetune(self, train_loader, model, idx, centroid_label_dict, epochs=1, verbose=True):
+    def _kmeans_finetune(self,
+                         train_loader,
+                         model,
+                         idx,
+                         centroid_label_dict,
+                         epochs=1,
+                         verbose=True):
         batch_time = AverageMeter()
         data_time = AverageMeter()
         losses = AverageMeter()
@@ -310,7 +363,10 @@ class QuantizeEnv:
                 # do SGD step
                 self.optimizer.step()
 
-                kmeans_update_model(model, self.quantizable_idx, centroid_label_dict, free_high_bit=True)
+                kmeans_update_model(model,
+                                    self.quantizable_idx,
+                                    centroid_label_dict,
+                                    free_high_bit=True)
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -343,7 +399,8 @@ class QuantizeEnv:
             self.adjust_learning_rate()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' % (losses.avg, top1.avg, top5.avg, t2-t1))
+            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
+                  (losses.avg, top1.avg, top5.avg, t2 - t1))
         return best_acc
 
     def _validate(self, val_loader, model, verbose=False):
@@ -398,9 +455,9 @@ class QuantizeEnv:
             bar.finish()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' % (losses.avg, top1.avg, top5.avg, t2-t1))
+            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
+                  (losses.avg, top1.avg, top5.avg, t2 - t1))
         if self.use_top5:
             return top5.avg
         else:
             return top1.avg
-
