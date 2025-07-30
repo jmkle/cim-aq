@@ -16,7 +16,13 @@ USE_CUDA = torch.cuda.is_available()
 
 
 class Actor(nn.Module):
-    def __init__(self, nb_states, nb_actions, hidden1=400, hidden2=300, init_w=3e-3):
+
+    def __init__(self,
+                 nb_states,
+                 nb_actions,
+                 hidden1=400,
+                 hidden2=300,
+                 init_w=3e-3):
         super(Actor, self).__init__()
         self.fc1 = nn.Linear(nb_states, hidden1)
         self.fc2 = nn.Linear(hidden1, hidden2)
@@ -35,7 +41,13 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, nb_states, nb_actions, hidden1=400, hidden2=300, init_w=3e-3):
+
+    def __init__(self,
+                 nb_states,
+                 nb_actions,
+                 hidden1=400,
+                 hidden2=300,
+                 init_w=3e-3):
         super(Critic, self).__init__()
         self.fc11 = nn.Linear(nb_states, hidden1)
         self.fc12 = nn.Linear(nb_actions, hidden1)
@@ -54,6 +66,7 @@ class Critic(nn.Module):
 
 
 class DDPG(object):
+
     def __init__(self, nb_states, nb_actions, args):
 
         if args.seed > 0:
@@ -76,11 +89,14 @@ class DDPG(object):
         self.critic_target = Critic(self.nb_states, self.nb_actions, **net_cfg)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr_c)
 
-        self.hard_update(self.actor_target, self.actor)  # Make sure target is with the same weight
+        self.hard_update(
+            self.actor_target,
+            self.actor)  # Make sure target is with the same weight
         self.hard_update(self.critic_target, self.critic)
 
         # Create replay buffer
-        self.memory = SequentialMemory(limit=args.rmsize, window_length=args.window_length)
+        self.memory = SequentialMemory(limit=args.rmsize,
+                                       window_length=args.window_length)
         # self.random_process = OrnsteinUhlenbeckProcess(size=nb_actions, theta=args.ou_theta, mu=args.ou_mu,
         #                                                sigma=args.ou_sigma)
 
@@ -124,7 +140,8 @@ class DDPG(object):
         if self.moving_average is None:
             self.moving_average = batch_mean_reward
         else:
-            self.moving_average += self.moving_alpha * (batch_mean_reward - self.moving_average)
+            self.moving_average += self.moving_alpha * (batch_mean_reward -
+                                                        self.moving_average)
         reward_batch -= self.moving_average
         # if reward_batch.std() > 0:
         #     reward_batch /= reward_batch.std()
@@ -142,7 +159,9 @@ class DDPG(object):
         # Critic update
         self.critic.zero_grad()
 
-        q_batch = self.critic([to_tensor(state_batch), to_tensor(action_batch)])
+        q_batch = self.critic(
+            [to_tensor(state_batch),
+             to_tensor(action_batch)])
 
         value_loss = criterion(q_batch, target_q_batch)
         value_loss.backward()
@@ -151,10 +170,9 @@ class DDPG(object):
         # Actor update
         self.actor.zero_grad()
 
-        policy_loss = -self.critic([
-            to_tensor(state_batch),
-            self.actor(to_tensor(state_batch))
-        ])
+        policy_loss = -self.critic(
+            [to_tensor(state_batch),
+             self.actor(to_tensor(state_batch))])
 
         policy_loss = policy_loss.mean()
         policy_loss.backward()
@@ -163,7 +181,7 @@ class DDPG(object):
         # Target update
         self.soft_update(self.actor_target, self.actor)
         self.soft_update(self.critic_target, self.critic)
-        
+
         # update for log
         self.value_loss = value_loss
         self.policy_loss = policy_loss
@@ -192,11 +210,15 @@ class DDPG(object):
 
     def select_action(self, s_t, episode, decay_epsilon=True):
         # assert episode >= self.warmup, 'Episode: {} warmup: {}'.format(episode, self.warmup)
-        action = to_numpy(self.actor(to_tensor(np.array(s_t).reshape(1, -1)))).squeeze(0)
-        delta = self.init_delta * (self.delta_decay ** (episode - self.warmup))
+        action = to_numpy(self.actor(to_tensor(np.array(s_t).reshape(
+            1, -1)))).squeeze(0)
+        delta = self.init_delta * (self.delta_decay**(episode - self.warmup))
         # action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
         #from IPython import embed; embed() # TODO eable decay_epsilon=True
-        action = sample_from_truncated_normal_distribution(lower=self.lbound, upper=self.rbound, mu=action, sigma=delta)
+        action = sample_from_truncated_normal_distribution(lower=self.lbound,
+                                                           upper=self.rbound,
+                                                           mu=action,
+                                                           sigma=delta)
         action = np.clip(action, self.lbound, self.rbound)
         # update for log
         self.delta = delta
@@ -211,23 +233,13 @@ class DDPG(object):
     def load_weights(self, output):
         if output is None: return
 
-        self.actor.load_state_dict(
-            torch.load('{}/actor.pkl'.format(output))
-        )
+        self.actor.load_state_dict(torch.load('{}/actor.pkl'.format(output)))
 
-        self.critic.load_state_dict(
-            torch.load('{}/critic.pkl'.format(output))
-        )
+        self.critic.load_state_dict(torch.load('{}/critic.pkl'.format(output)))
 
     def save_model(self, output):
-        torch.save(
-            self.actor.state_dict(),
-            '{}/actor.pkl'.format(output)
-        )
-        torch.save(
-            self.critic.state_dict(),
-            '{}/critic.pkl'.format(output)
-        )
+        torch.save(self.actor.state_dict(), '{}/actor.pkl'.format(output))
+        torch.save(self.critic.state_dict(), '{}/critic.pkl'.format(output))
 
     def seed(self, s):
         torch.manual_seed(s)
@@ -235,13 +247,14 @@ class DDPG(object):
             torch.cuda.manual_seed(s)
 
     def soft_update(self, target, source):
-        for target_param, param in zip(target.parameters(), source.parameters()):
-            target_param.data.copy_(
-                target_param.data * (1.0 - self.tau) + param.data * self.tau
-            )
+        for target_param, param in zip(target.parameters(),
+                                       source.parameters()):
+            target_param.data.copy_(target_param.data * (1.0 - self.tau) +
+                                    param.data * self.tau)
 
     def hard_update(self, target, source):
-        for target_param, param in zip(target.parameters(), source.parameters()):
+        for target_param, param in zip(target.parameters(),
+                                       source.parameters()):
             target_param.data.copy_(param.data)
 
     def get_delta(self):

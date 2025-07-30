@@ -22,18 +22,19 @@ from lib.utils.data_utils import get_dataset
 from progress.bar import Bar
 from lib.utils.quantize_utils import quantize_model, kmeans_update_model, QConv2d, QLinear, calibrate
 
-
 # Models
 default_model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
+                             if name.islower() and not name.startswith("__")
+                             and callable(models.__dict__[name]))
 
-customized_models_names = sorted(name for name in customized_models.__dict__
+customized_models_names = sorted(
+    name for name in customized_models.__dict__
     if name.islower() and not name.startswith("__")
     and callable(customized_models.__dict__[name]))
 
 for name in customized_models.__dict__:
-    if name.islower() and not name.startswith("__") and callable(customized_models.__dict__[name]):
+    if name.islower() and not name.startswith("__") and callable(
+            customized_models.__dict__[name]):
         models.__dict__[name] = customized_models.__dict__[name]
 
 model_names = default_model_names + customized_models_names
@@ -44,55 +45,116 @@ parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 # Datasets
 parser.add_argument('-d', '--data', default='data/imagenet', type=str)
 parser.add_argument('--data_name', default='imagenet', type=str)
-parser.add_argument('-j', '--workers', default=16, type=int, metavar='N',
+parser.add_argument('-j',
+                    '--workers',
+                    default=16,
+                    type=int,
+                    metavar='N',
                     help='number of data loading workers (default: 4)')
 # Optimization options
-parser.add_argument('--epochs', default=100, type=int, metavar='N',
+parser.add_argument('--epochs',
+                    default=100,
+                    type=int,
+                    metavar='N',
                     help='number of total epochs to run')
-parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
+parser.add_argument('--start_epoch',
+                    default=0,
+                    type=int,
+                    metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--warmup_epoch', default=0, type=int, metavar='N',
+parser.add_argument('--warmup_epoch',
+                    default=0,
+                    type=int,
+                    metavar='N',
                     help='manual warmup epoch number (useful on restarts)')
-parser.add_argument('--train_batch', default=256, type=int, metavar='N',
+parser.add_argument('--train_batch',
+                    default=256,
+                    type=int,
+                    metavar='N',
                     help='train batchsize (default: 256)')
-parser.add_argument('--test_batch', default=512, type=int, metavar='N',
+parser.add_argument('--test_batch',
+                    default=512,
+                    type=int,
+                    metavar='N',
                     help='test batchsize (default: 512)')
-parser.add_argument('--lr', '--learning-rate', default=0.1, type=float,
-                    metavar='LR', help='initial learning rate')
-parser.add_argument('--lr_type', default='cos', type=str,
+parser.add_argument('--lr',
+                    '--learning-rate',
+                    default=0.1,
+                    type=float,
+                    metavar='LR',
+                    help='initial learning rate')
+parser.add_argument('--lr_type',
+                    default='cos',
+                    type=str,
                     help='lr scheduler (exp/cos/step3/fixed)')
-parser.add_argument('--schedule', type=int, nargs='+', default=[31, 61, 91],
-                        help='Decrease learning rate at these epochs.')
-parser.add_argument('--gamma', type=float, default=0.1, help='LR is multiplied by gamma on schedule.')
-parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
+parser.add_argument('--schedule',
+                    type=int,
+                    nargs='+',
+                    default=[31, 61, 91],
+                    help='Decrease learning rate at these epochs.')
+parser.add_argument('--gamma',
+                    type=float,
+                    default=0.1,
+                    help='LR is multiplied by gamma on schedule.')
+parser.add_argument('--momentum',
+                    default=0.9,
+                    type=float,
+                    metavar='M',
                     help='momentum')
-parser.add_argument('--weight-decay', '--wd', default=1e-5, type=float,
-                    metavar='W', help='weight decay (default: 1e-5)')
+parser.add_argument('--weight-decay',
+                    '--wd',
+                    default=1e-5,
+                    type=float,
+                    metavar='W',
+                    help='weight decay (default: 1e-5)')
 # Checkpoints
-parser.add_argument('-c', '--checkpoint', default='checkpoint', type=str, metavar='PATH',
+parser.add_argument('-c',
+                    '--checkpoint',
+                    default='checkpoint',
+                    type=str,
+                    metavar='PATH',
                     help='path to save checkpoint (default: checkpoint)')
-parser.add_argument('--resume', default='', type=str, metavar='PATH',
+parser.add_argument('--resume',
+                    default='',
+                    type=str,
+                    metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--pretrained', action='store_true',
+parser.add_argument('--pretrained',
+                    action='store_true',
                     help='use pretrained model')
 # Quantization
-parser.add_argument('--linear_quantization', dest='linear_quantization', action='store_true',
+parser.add_argument('--linear_quantization',
+                    dest='linear_quantization',
+                    action='store_true',
                     help='quantize both weight and activation)')
-parser.add_argument('--free_high_bit', default=True, type=bool,
+parser.add_argument('--free_high_bit',
+                    default=True,
+                    type=bool,
                     help='free the high bit (>6)')
-parser.add_argument('--half', action='store_true',
-                    help='half')
-parser.add_argument('--half_type', default='O1', type=str,
+parser.add_argument('--half', action='store_true', help='half')
+parser.add_argument('--half_type',
+                    default='O1',
+                    type=str,
                     help='half type: O0/O1/O2/O3')
 # Architecture
-parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet50', choices=model_names,
-                    help='model architecture:' + ' | '.join(model_names) + ' (default: resnet50)')
+parser.add_argument('--arch',
+                    '-a',
+                    metavar='ARCH',
+                    default='resnet50',
+                    choices=model_names,
+                    help='model architecture:' + ' | '.join(model_names) +
+                    ' (default: resnet50)')
 # Miscs
 parser.add_argument('--manualSeed', type=int, help='manual seed')
-parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
+parser.add_argument('-e',
+                    '--evaluate',
+                    dest='evaluate',
+                    action='store_true',
                     help='evaluate model on validation set')
 # Device options
-parser.add_argument('--gpu_id', default='1', type=str,
+parser.add_argument('--gpu_id',
+                    default='1',
+                    type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 
 args = parser.parse_args()
@@ -110,7 +172,6 @@ random.seed(args.manualSeed)
 torch.manual_seed(args.manualSeed)
 if use_cuda:
     torch.cuda.manual_seed_all(args.manualSeed)
-
 
 best_acc = 0  # best test accuracy
 
@@ -144,7 +205,8 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
 
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
-        inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
+        inputs, targets = torch.autograd.Variable(
+            inputs), torch.autograd.Variable(targets)
 
         # compute output
         outputs = model(inputs)
@@ -169,7 +231,10 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         optimizer.step()
 
         if not args.linear_quantization:
-            kmeans_update_model(model, quantizable_idx, centroid_label_dict, free_high_bit=args.free_high_bit)
+            kmeans_update_model(model,
+                                quantizable_idx,
+                                centroid_label_dict,
+                                free_high_bit=args.free_high_bit)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -216,7 +281,8 @@ def test(val_loader, model, criterion, epoch, use_cuda):
 
             if use_cuda:
                 inputs, targets = inputs.cuda(), targets.cuda()
-            inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
+            inputs, targets = torch.autograd.Variable(
+                inputs, volatile=True), torch.autograd.Variable(targets)
 
             # compute output
             outputs = model(inputs)
@@ -252,25 +318,30 @@ def test(val_loader, model, criterion, epoch, use_cuda):
     return losses.avg, top1.avg
 
 
-def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
+def save_checkpoint(state,
+                    is_best,
+                    checkpoint='checkpoint',
+                    filename='checkpoint.pth.tar'):
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
     if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
+        shutil.copyfile(filepath, os.path.join(checkpoint,
+                                               'model_best.pth.tar'))
 
 
 def adjust_learning_rate(optimizer, epoch):
     global lr_current
     global best_acc
     if epoch < args.warmup_epoch:
-        lr_current = state['lr']*args.gamma
+        lr_current = state['lr'] * args.gamma
     elif args.lr_type == 'cos':
         # cos
-        lr_current = 0.5 * args.lr * (1 + math.cos(math.pi * epoch / args.epochs))
+        lr_current = 0.5 * args.lr * (1 +
+                                      math.cos(math.pi * epoch / args.epochs))
     elif args.lr_type == 'exp':
         step = 1
         decay = args.gamma
-        lr_current = args.lr * (decay ** (epoch // step))
+        lr_current = args.lr * (decay**(epoch // step))
     elif epoch in args.schedule:
         lr_current *= args.gamma
     for param_group in optimizer.param_groups:
@@ -283,26 +354,37 @@ if __name__ == '__main__':
     if not os.path.isdir(args.checkpoint):
         os.makedirs(args.checkpoint)
 
-    train_loader, val_loader, n_class = get_dataset(dataset_name=args.data_name, batch_size=args.train_batch,
-                                                    n_worker=args.workers, data_root=args.data)
+    train_loader, val_loader, n_class = get_dataset(
+        dataset_name=args.data_name,
+        batch_size=args.train_batch,
+        n_worker=args.workers,
+        data_root=args.data)
 
     model = models.__dict__[args.arch](pretrained=args.pretrained)
-    print("=> creating model '{}'".format(args.arch), ' pretrained is ', args.pretrained)
-    print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
+    print("=> creating model '{}'".format(args.arch), ' pretrained is ',
+          args.pretrained)
+    print('    Total params: %.2fM' %
+          (sum(p.numel() for p in model.parameters()) / 1000000.0))
     cudnn.benchmark = True
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    optimizer = optim.SGD(model.parameters(),
+                          lr=args.lr,
+                          momentum=args.momentum,
+                          weight_decay=args.weight_decay)
 
     # use HalfTensor
     if args.half:
         try:
             import apex
         except ImportError:
-            raise ImportError("Please install apex from https://github.com/NVIDIA/apex")
+            raise ImportError(
+                "Please install apex from https://github.com/NVIDIA/apex")
         model.cuda()
-        model, optimizer = apex.amp.initialize(model, optimizer, opt_level=args.half_type)
+        model, optimizer = apex.amp.initialize(model,
+                                               optimizer,
+                                               opt_level=args.half_type)
 
     if args.linear_quantization:
         quantizable_idx = []
@@ -313,12 +395,22 @@ if __name__ == '__main__':
         print(quantizable_idx)
 
         if 'mobilenetv2' in args.arch:
-            strategy = [[8, -1], [7, 7], [5, 6], [4, 6], [5, 6], [5, 7], [5, 6], [7, 4], [4, 6], [4, 6], [7, 7], [5, 6], [4, 6], [7, 3], [5, 7], [4, 7], [7, 3], [5, 7], [4, 7], [7, 7], [4, 7], [4, 7], [6, 4], [6, 7], [4, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [6, 7], [6, 4], [5, 7], [6, 7], [6, 4], [5, 7], [6, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [8, 8]]
+            strategy = [[8, -1], [7, 7], [5, 6], [4, 6], [5, 6], [5, 7],
+                        [5, 6], [7, 4], [4, 6], [4, 6], [7, 7], [5, 6], [4, 6],
+                        [7, 3], [5, 7], [4, 7], [7, 3], [5, 7], [4, 7], [7, 7],
+                        [4, 7], [4, 7], [6, 4], [6, 7], [4, 7], [7, 4], [6, 7],
+                        [5, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [6, 7],
+                        [6, 4], [5, 7], [6, 7], [6, 4], [5, 7], [6, 7], [7, 7],
+                        [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7],
+                        [7, 7], [7, 7], [4, 7], [7, 7], [8, 8]]
         else:
             raise NotImplementedError
 
         print(strategy)
-        quantize_layer_bit_dict = {n: b for n, b in zip(quantizable_idx, strategy)}
+        quantize_layer_bit_dict = {
+            n: b
+            for n, b in zip(quantizable_idx, strategy)
+        }
         for i, layer in enumerate(model.modules()):
             if i not in quantizable_idx:
                 continue
@@ -336,8 +428,11 @@ if __name__ == '__main__':
 
         if args.arch.startswith('resnet50'):
             # resnet50 ratio 10%
-            strategy = [6, 6, 6, 6, 5, 5, 6, 5, 5, 6, 5, 5, 6, 5, 5, 5, 5, 5, 4, 5, 4, 4, 5, 4, 4, 4, 3, 4,
-                        4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 3, 3, 2, 3, 2, 3, 3, 2, 3, 4]
+            strategy = [
+                6, 6, 6, 6, 5, 5, 6, 5, 5, 6, 5, 5, 6, 5, 5, 5, 5, 5, 4, 5, 4,
+                4, 5, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 4,
+                3, 4, 3, 3, 2, 3, 2, 3, 3, 2, 3, 4
+            ]
         else:
             # you can put your own strategy here
             raise NotImplementedError
@@ -345,8 +440,13 @@ if __name__ == '__main__':
 
         assert len(quantizable_idx) == len(strategy), \
             'You should provide the same number of bit setting as layer list for weight quantization!'
-        centroid_label_dict = quantize_model(model, quantizable_idx, strategy, mode='cpu', quantize_bias=False,
-                                             centroids_init='k-means++', max_iter=50)
+        centroid_label_dict = quantize_model(model,
+                                             quantizable_idx,
+                                             strategy,
+                                             mode='cpu',
+                                             quantize_bias=False,
+                                             centroids_init='k-means++',
+                                             max_iter=50)
 
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
         model.features = torch.nn.DataParallel(model.features)
@@ -359,7 +459,8 @@ if __name__ == '__main__':
     if args.resume:
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
-        assert os.path.isfile(args.resume), 'Error: no checkpoint directory found!'
+        assert os.path.isfile(
+            args.resume), 'Error: no checkpoint directory found!'
         args.checkpoint = os.path.dirname(args.resume)
         checkpoint = torch.load(args.resume)
         best_acc = checkpoint['best_acc']
@@ -368,17 +469,27 @@ if __name__ == '__main__':
         model.load_state_dict(checkpoint['state_dict'], strict=False)
         optimizer.load_state_dict(checkpoint['optimizer'])
         if os.path.isfile(os.path.join(args.checkpoint, 'log.txt')):
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
+            logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
+                            title=title,
+                            resume=True)
         else:
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
-            logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
+            logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
+                            title=title)
+            logger.set_names([
+                'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
+                'Valid Acc.'
+            ])
     else:
         logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
-        logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
+        logger.set_names([
+            'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
+            'Valid Acc.'
+        ])
 
     if args.evaluate:
         print('\nEvaluation only')
-        test_loss, test_acc = test(val_loader, model, criterion, start_epoch, use_cuda)
+        test_loss, test_acc = test(val_loader, model, criterion, start_epoch,
+                                   use_cuda)
         print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
         exit()
 
@@ -386,15 +497,25 @@ if __name__ == '__main__':
     for epoch in range(start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
         # if args.free_high_bit and args.epochs - epoch < args.epochs // 10:
-        if args.free_high_bit and epoch == args.epochs - 1 and (not args.linear_quantization):
+        if args.free_high_bit and epoch == args.epochs - 1 and (
+                not args.linear_quantization):
             # quantize the high bit layers only at last epoch to save time
-            centroid_label_dict = quantize_model(model, quantizable_idx, strategy, mode='cpu', quantize_bias=False,
-                                                 centroids_init='k-means++', max_iter=50, free_high_bit=False)
+            centroid_label_dict = quantize_model(model,
+                                                 quantizable_idx,
+                                                 strategy,
+                                                 mode='cpu',
+                                                 quantize_bias=False,
+                                                 centroids_init='k-means++',
+                                                 max_iter=50,
+                                                 free_high_bit=False)
 
-        print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, lr_current))
+        print('\nEpoch: [%d | %d] LR: %f' %
+              (epoch + 1, args.epochs, lr_current))
 
-        train_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch, use_cuda)
-        test_loss, test_acc = test(val_loader, model, criterion, epoch, use_cuda)
+        train_loss, train_acc = train(train_loader, model, criterion,
+                                      optimizer, epoch, use_cuda)
+        test_loss, test_acc = test(val_loader, model, criterion, epoch,
+                                   use_cuda)
 
         # append logger file
         logger.append([lr_current, train_loss, test_loss, train_acc, test_acc])
@@ -402,16 +523,18 @@ if __name__ == '__main__':
         # save model
         is_best = test_acc > best_acc
         best_acc = max(test_acc, best_acc)
-        save_checkpoint({
+        save_checkpoint(
+            {
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'acc': test_acc,
                 'best_acc': best_acc,
-                'optimizer' : optimizer.state_dict(),
-            }, is_best, checkpoint=args.checkpoint)
+                'optimizer': optimizer.state_dict(),
+            },
+            is_best,
+            checkpoint=args.checkpoint)
 
     logger.close()
 
     print('Best acc:')
     print(best_acc)
-
