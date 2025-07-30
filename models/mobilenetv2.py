@@ -1,7 +1,9 @@
-import torch.nn as nn
-import torch
-import os
 import math
+import os
+
+import torch
+import torch.nn as nn
+
 from lib.utils.quantize_utils import QConv2d, QLinear
 
 __all__ = ['MobileNetV2', 'mobilenetv2', 'qmobilenetv2']
@@ -9,32 +11,23 @@ __all__ = ['MobileNetV2', 'mobilenetv2', 'qmobilenetv2']
 
 def conv_bn(inp, oup, stride, conv_layer=nn.Conv2d, half_wave=True):
     if conv_layer == nn.Conv2d:
-        return nn.Sequential(
-            conv_layer(inp, oup, 3, stride, 1, bias=False),
-            nn.BatchNorm2d(oup),
-            nn.ReLU6(inplace=True)
-        )
+        return nn.Sequential(conv_layer(inp, oup, 3, stride, 1, bias=False),
+                             nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
     else:
         return nn.Sequential(
-            conv_layer(inp, oup, 3, stride, 1, bias=False, half_wave=half_wave),
-            nn.BatchNorm2d(oup),
-            nn.ReLU6(inplace=True)
-        )
+            conv_layer(inp, oup, 3, stride, 1, bias=False,
+                       half_wave=half_wave), nn.BatchNorm2d(oup),
+            nn.ReLU6(inplace=True))
 
 
 def conv_1x1_bn(inp, oup, conv_layer=nn.Conv2d, half_wave=True):
     if conv_layer == nn.Conv2d:
-        return nn.Sequential(
-            conv_layer(inp, oup, 1, 1, 0, bias=False),
-            nn.BatchNorm2d(oup),
-            nn.ReLU6(inplace=True)
-        )
+        return nn.Sequential(conv_layer(inp, oup, 1, 1, 0, bias=False),
+                             nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
     else:
         return nn.Sequential(
             conv_layer(inp, oup, 1, 1, 0, bias=False, half_wave=half_wave),
-            nn.BatchNorm2d(oup),
-            nn.ReLU6(inplace=True)
-        )
+            nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
 
 
 def make_divisible(x, divisible_by=8):
@@ -43,6 +36,7 @@ def make_divisible(x, divisible_by=8):
 
 
 class InvertedResidual(nn.Module):
+
     def __init__(self, inp, oup, stride, expand_ratio, conv_layer=nn.Conv2d):
         super(InvertedResidual, self).__init__()
         self.stride = stride
@@ -54,7 +48,13 @@ class InvertedResidual(nn.Module):
         if expand_ratio == 1:
             self.conv = nn.Sequential(
                 # dw
-                conv_layer(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
+                conv_layer(hidden_dim,
+                           hidden_dim,
+                           3,
+                           stride,
+                           1,
+                           groups=hidden_dim,
+                           bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pw-linear
@@ -68,7 +68,13 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # dw
-                conv_layer(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
+                conv_layer(hidden_dim,
+                           hidden_dim,
+                           3,
+                           stride,
+                           1,
+                           groups=hidden_dim,
+                           bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pw-linear
@@ -78,11 +84,23 @@ class InvertedResidual(nn.Module):
         else:
             self.conv = nn.Sequential(
                 # pw
-                conv_layer(inp, hidden_dim, 1, 1, 0, bias=False, half_wave=False),
+                conv_layer(inp,
+                           hidden_dim,
+                           1,
+                           1,
+                           0,
+                           bias=False,
+                           half_wave=False),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # dw
-                conv_layer(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
+                conv_layer(hidden_dim,
+                           hidden_dim,
+                           3,
+                           stride,
+                           1,
+                           groups=hidden_dim,
+                           bias=False),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pw-linear
@@ -98,7 +116,13 @@ class InvertedResidual(nn.Module):
 
 
 class MobileNetV2(nn.Module):
-    def __init__(self, num_classes=1000, input_size=224, width_mult=1., block=InvertedResidual, conv_layer=nn.Conv2d):
+
+    def __init__(self,
+                 num_classes=1000,
+                 input_size=224,
+                 width_mult=1.,
+                 block=InvertedResidual,
+                 conv_layer=nn.Conv2d):
         super(MobileNetV2, self).__init__()
         input_channel = 32
         last_channel = 1280
@@ -116,7 +140,8 @@ class MobileNetV2(nn.Module):
         # building first layer
         assert input_size % 32 == 0
         # input_channel = make_divisible(input_channel * width_mult)  # first channel is always 32!
-        self.last_channel = make_divisible(last_channel * width_mult) if width_mult > 1.0 else last_channel
+        self.last_channel = make_divisible(
+            last_channel * width_mult) if width_mult > 1.0 else last_channel
         self.features = [conv_bn(3, input_channel, 2, conv_layer=conv_layer)]
         # building inverted residual blocks
         for t, c, n, s in interverted_residual_setting:
@@ -126,12 +151,26 @@ class MobileNetV2(nn.Module):
                 output_channel = make_divisible(c * width_mult) if t > 1 else c
             for i in range(n):
                 if i == 0:
-                    self.features.append(block(input_channel, output_channel, s, expand_ratio=t, conv_layer=conv_layer))
+                    self.features.append(
+                        block(input_channel,
+                              output_channel,
+                              s,
+                              expand_ratio=t,
+                              conv_layer=conv_layer))
                 else:
-                    self.features.append(block(input_channel, output_channel, 1, expand_ratio=t, conv_layer=conv_layer))
+                    self.features.append(
+                        block(input_channel,
+                              output_channel,
+                              1,
+                              expand_ratio=t,
+                              conv_layer=conv_layer))
                 input_channel = output_channel
         # building last several layers
-        self.features.append(conv_1x1_bn(input_channel, self.last_channel, conv_layer=conv_layer, half_wave=False))
+        self.features.append(
+            conv_1x1_bn(input_channel,
+                        self.last_channel,
+                        conv_layer=conv_layer,
+                        half_wave=False))
         # make it nn.Sequential
         self.features = nn.Sequential(*self.features)
 
@@ -196,4 +235,4 @@ if __name__ == '__main__':
     # from ops.profile import profile
     net = mobilenetv2()
     flops, param = profile(net, input_size=(1, 3, 224, 224))
-    print(flops/1e9, param/1e6)
+    print(flops / 1e9, param / 1e6)

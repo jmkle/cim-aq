@@ -2,13 +2,15 @@
 # Kuan Wang*, Zhijian Liu*, Yujun Lin*, Ji Lin, Song Han
 # {kuanwang, zhijian, yujunlin, jilin, songhan}@mit.edu
 
-import torch
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
 from lib.utils.quantize_utils import QConv2d, QLinear
 
 
 class AverageMeter(object):
+
     def __init__(self):
         self.val = 0
         self.avg = 0
@@ -36,6 +38,7 @@ class AverageMeter(object):
 
 
 class Logger(object):
+
     def __init__(self, fpath, title=None, resume=False):
         self.file = None
         self.resume = resume
@@ -94,7 +97,7 @@ class Logger(object):
             self.file.close()
 
 
-def accuracy(output, target, topk=(1,)):
+def accuracy(output, target, topk=(1, )):
     maxk = max(topk)
     batch_size = target.size(0)
 
@@ -120,25 +123,50 @@ def to_numpy(var):
 
 
 def to_tensor(ndarray, volatile=False, requires_grad=False, dtype=FLOAT):
-    return Variable(
-        torch.from_numpy(ndarray), volatile=volatile, requires_grad=requires_grad
-    ).type(dtype)
+    return Variable(torch.from_numpy(ndarray),
+                    volatile=volatile,
+                    requires_grad=requires_grad).type(dtype)
 
 
 def sample_from_truncated_normal_distribution(lower, upper, mu, sigma, size=1):
     from scipy import stats
-    return stats.truncnorm.rvs((lower-mu)/sigma, (upper-mu)/sigma, loc=mu, scale=sigma, size=size)
+    return stats.truncnorm.rvs((lower - mu) / sigma, (upper - mu) / sigma,
+                               loc=mu,
+                               scale=sigma,
+                               size=size)
 
 
 # logging
-def prRed(prt): print("\033[91m {}\033[00m" .format(prt))
-def prGreen(prt): print("\033[92m {}\033[00m" .format(prt))
-def prYellow(prt): print("\033[93m {}\033[00m" .format(prt))
-def prLightPurple(prt): print("\033[94m {}\033[00m" .format(prt))
-def prPurple(prt): print("\033[95m {}\033[00m" .format(prt))
-def prCyan(prt): print("\033[96m {}\033[00m" .format(prt))
-def prLightGray(prt): print("\033[97m {}\033[00m" .format(prt))
-def prBlack(prt): print("\033[98m {}\033[00m" .format(prt))
+def prRed(prt):
+    print("\033[91m {}\033[00m".format(prt))
+
+
+def prGreen(prt):
+    print("\033[92m {}\033[00m".format(prt))
+
+
+def prYellow(prt):
+    print("\033[93m {}\033[00m".format(prt))
+
+
+def prLightPurple(prt):
+    print("\033[94m {}\033[00m".format(prt))
+
+
+def prPurple(prt):
+    print("\033[95m {}\033[00m".format(prt))
+
+
+def prCyan(prt):
+    print("\033[96m {}\033[00m".format(prt))
+
+
+def prLightGray(prt):
+    print("\033[97m {}\033[00m".format(prt))
+
+
+def prBlack(prt):
+    print("\033[98m {}\033[00m".format(prt))
 
 
 def get_num_gen(gen):
@@ -156,10 +184,13 @@ def get_layer_info(layer):
 
 
 def get_layer_param(model):
-    import operator
     import functools
+    import operator
 
-    return sum([functools.reduce(operator.mul, i.size(), 1) for i in model.parameters()])
+    return sum([
+        functools.reduce(operator.mul, i.size(), 1)
+        for i in model.parameters()
+    ])
 
 
 def measure_layer(layer, x):
@@ -171,10 +202,10 @@ def measure_layer(layer, x):
 
     # ops_conv
     if type_name in ['Conv2d', 'QConv2d']:
-        out_h = int((x.size()[2] + 2 * layer.padding[0] - layer.kernel_size[0]) /
-                    layer.stride[0] + 1)
-        out_w = int((x.size()[3] + 2 * layer.padding[1] - layer.kernel_size[1]) /
-                    layer.stride[1] + 1)
+        out_h = int((x.size()[2] + 2 * layer.padding[0] -
+                     layer.kernel_size[0]) / layer.stride[0] + 1)
+        out_w = int((x.size()[3] + 2 * layer.padding[1] -
+                     layer.kernel_size[1]) / layer.stride[1] + 1)
         layer.in_h = x.size()[2]
         layer.in_w = x.size()[3]
         layer.out_h = out_h
@@ -194,8 +225,10 @@ def measure_layer(layer, x):
     elif type_name in ['AvgPool2d']:
         in_w = x.size()[2]
         kernel_ops = layer.kernel_size * layer.kernel_size
-        out_w = int((in_w + 2 * layer.padding - layer.kernel_size) / layer.stride + 1)
-        out_h = int((in_w + 2 * layer.padding - layer.kernel_size) / layer.stride + 1)
+        out_w = int((in_w + 2 * layer.padding - layer.kernel_size) /
+                    layer.stride + 1)
+        out_h = int((in_w + 2 * layer.padding - layer.kernel_size) /
+                    layer.stride + 1)
         delta_ops = x.size()[1] * out_w * out_h * kernel_ops
         delta_params = get_layer_param(layer)
 
@@ -243,11 +276,15 @@ def measure_model(model, H, W):
     def modify_forward(model):
         for child in model.children():
             if should_measure(child):
+
                 def new_forward(m):
+
                     def lambda_forward(x):
                         measure_layer(m, x)
                         return m.old_forward(x)
+
                     return lambda_forward
+
                 child.old_forward = child.forward
                 child.forward = new_forward(child)
             else:
@@ -267,4 +304,3 @@ def measure_model(model, H, W):
     restore_forward(model)
 
     return count_ops, count_params
-
