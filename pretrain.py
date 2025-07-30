@@ -15,18 +15,10 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
+from progress.bar import Bar
+from torch.utils.tensorboard import SummaryWriter
 
 import models as customized_models
-
-try:
-    from torch.utils.tensorboard import SummaryWriter
-    print('use tensorboard in pytorch')
-except:
-    print('use tensorboardX')
-    from tensorboardX import SummaryWriter
-
-from progress.bar import Bar
-
 from lib.utils.data_utils import get_dataset
 from lib.utils.quantize_utils import (QConv2d, QLinear, calibrate, dorefa,
                                       kmeans_update_model, quantize_model,
@@ -422,8 +414,8 @@ if __name__ == '__main__':
             'Valid Acc.'
         ])
 
-    tf_writer = SummaryWriter(logdir=os.path.join(args.checkpoint, 'logs'))
-    # tf_writer = SummaryWriter(log_dir=os.path.join(args.checkpoint, 'logs'))
+    # Setup tensorboard writer
+    tf_writer = SummaryWriter(log_dir=os.path.join(args.checkpoint, 'logs'))
     print('save the checkpoint to ', args.checkpoint)
 
     if args.evaluate:

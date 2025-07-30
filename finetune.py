@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
-from progress.bar import Bar
+from torch.utils.tensorboard import SummaryWriter
 
 import models as customized_models
 from lib.utils.data_utils import get_dataset
@@ -487,6 +487,9 @@ if __name__ == '__main__':
             'Valid Acc.'
         ])
 
+    # Setup tensorboard writer
+    tf_writer = SummaryWriter(log_dir=os.path.join(args.checkpoint, 'logs'))
+
     if args.evaluate:
         print('\nEvaluation only')
         test_loss, test_acc = test(val_loader, model, criterion, start_epoch,
@@ -534,6 +537,19 @@ if __name__ == '__main__':
             },
             is_best,
             checkpoint=args.checkpoint)
+
+        # ============ TensorBoard logging ============#
+        # Log the scalar values
+        info = {
+            'train_loss': train_loss,
+            'train_accuracy': train_acc,
+            'test_loss': test_loss,
+            'test_accuracy': test_acc,
+            'learning_rate': lr_current
+        }
+
+        for tag, value in info.items():
+            tf_writer.add_scalar(tag, value, epoch)
 
     logger.close()
 

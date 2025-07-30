@@ -11,7 +11,7 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision.models as models
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 
 import models as customized_models
 from lib.env.linear_quantize_env import LinearQuantizeEnv
@@ -319,7 +319,7 @@ if __name__ == "__main__":
     if args.suffix is not None:
         base_folder_name = base_folder_name + '_' + args.suffix
     args.output = os.path.join(args.output, base_folder_name)
-    tfwriter = SummaryWriter(logdir=args.output)
+    tfwriter = SummaryWriter(log_dir=args.output)
     text_writer = open(os.path.join(args.output, 'log.txt'), 'w')
     print('==> Output path: {}...'.format(args.output))
 
