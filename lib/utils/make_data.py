@@ -1,6 +1,7 @@
 import os
 import subprocess
 from multiprocessing import Pool
+
 from tqdm import tqdm
 
 root = os.getcwd()
@@ -30,11 +31,13 @@ for split in ['train', 'val']:
     for x in f:
         cls_list.append(x[:9])
     # pair_list = [(os.path.join(src_split_dir, c), os.path.join(dst_split_dir, c)) for c in cls_list]
-    pair_list = [(os.path.join(src_split_dir, c), dst_split_dir) for c in cls_list]
+    pair_list = [(os.path.join(src_split_dir, c), dst_split_dir)
+                 for c in cls_list]
 
     p = Pool(n_thread)
 
-    for _ in tqdm(p.imap_unordered(copy_func, pair_list), total=len(pair_list)):
+    for _ in tqdm(p.imap_unordered(copy_func, pair_list),
+                  total=len(pair_list)):
         pass
     # p.map(worker, vid_list)
     p.close()
