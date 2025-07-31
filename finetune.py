@@ -493,4 +493,7 @@ if __name__ == '__main__':
 
     logger.close()
 
+    inputs, _ = next(iter(train_loader))
+    export_models(model, args.checkpoint, inputs, wandb_run)
+
     main_logger.info(f'Best accuracy: {best_acc}')
