@@ -1,0 +1,90 @@
+---
+# Template for layer dimensions in YAML format
+# Format for each layer:
+#   type: "Conv2D"/"Dense"/"MatMul"
+#   output_dim: number of output channels/features/rows
+#   input_dim: input dimension (channels*height*width for Conv2D, features for Dense, input columns for MatMul)
+#   mvm_invocations: "output_height*output_width" for Conv2D layers, number of output columns for MatMul (omit for Dense)
+#   repeat_factor: (optional) number of times to repeat the layer (e.g., number of heads in a transformer block for MatMul)
+#
+# For convolutional layers:
+# - output_dim = number of output filters
+# - input_dim = input_channels * input_height * input_width
+# - mvm_invocations = "output_height*output_width"
+#
+# For fully connected layers:
+# - output_dim = number of output features
+# - input_dim = number of input features
+# - mvm_invocations not needed (default: 1)
+#
+# For matrix multiplication layers (m x k @ k x n = m x n):
+# - output_dim = number of output rows (m)
+# - input_dim = number of input columns (k)
+# - mvm_invocations = number of output columns (n)
+layer_dimensions:
+  # Example for a CNN network
+
+  # Convolutional layers
+  - type: Conv2D
+    output_dim: 64
+    input_dim: 3*224*224  # 3 channels, 224×224 input
+    mvm_invocations: 224*224  # Output size after convolution
+  - type: Conv2D
+    output_dim: 64
+    input_dim: 64*224*224  # 64 channels, 224×224 input
+    mvm_invocations: 224*224  # Same padding
+
+  # After pooling (e.g., 2x2 pooling reduces spatial dimensions)
+  - type: Conv2D
+    output_dim: 128
+    input_dim: 64*112*112  # 64 channels, 112×112 input (after pooling)
+    mvm_invocations: 112*112
+  - type: Conv2D
+    output_dim: 128
+    input_dim: 128*112*112  # 128 channels, 112×112 input
+    mvm_invocations: 112*112
+
+  # After more pooling
+  - type: Conv2D
+    output_dim: 256
+    input_dim: 128*56*56  # 128 channels, 56×56 input
+    mvm_invocations: 56*56
+  - type: Conv2D
+    output_dim: 256
+    input_dim: 256*56*56  # 256 channels, 56×56 input
+    mvm_invocations: 56*56
+
+  # After more pooling
+  - type: Conv2D
+    output_dim: 512
+    input_dim: 256*28*28  # 256 channels, 28×28 input
+    mvm_invocations: 28*28
+  - type: Conv2D
+    output_dim: 512
+    input_dim: 512*28*28  # 512 channels, 28×28 input
+    mvm_invocations: 28*28
+
+  # Fully connected layers
+  - type: Dense
+    output_dim: 4096
+    input_dim: 512*7*7  # Flattened from 512×7×7
+  - type: Dense
+    output_dim: 4096
+    input_dim: 4096
+  - type: Dense
+    output_dim: 1000
+    input_dim: 4096
+
+  # MatMul layers (e.g. inside a transformer block) (m x k @ k x n = m x n)
+  - type: MatMul
+    output_dim: 64  # m
+    input_dim: 128  # k
+    mvm_invocations: 50  # n (number of independent MVM executions)
+    repeat_factor: 12  # Number of times this layer is repeated (number of heads in a transformer block)
+# Note: The mvm_invocations field is used to calculate the number of MVM executions.
+# It is particularly relevant for Conv2D and MatMul layers where the GeMMs are divided into multiple MVM executions.
+# The cost calculation for MVM executions is as follows:
+# num_mvm_executes = mvm_invocations * num_mvm_writes * ceil(a_bit / input_resolution)
+# For Conv2D layers, the mvm_invocations is derived from the spatial dimensions of the output feature map.
+# For Dense layers, it is simply 1 since there is no spatial dimension.
+# For MatMul layers, the mvm_invocations is the number of columns in the output matrix.

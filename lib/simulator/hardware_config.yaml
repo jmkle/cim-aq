@@ -1,0 +1,16 @@
+---
+##################################################
+# Hardware Configuration
+##################################################
+# Crossbar parameters
+crossbar:
+  size:  # Size of crossbar array
+    m: 256
+    n: 256
+  resolution_weight_bits: 4  # Bits of precision per crossbar cell
+  resolution_input_bits: 1  # Bits of precision per input
+  mvm_write_latency: 56  # Latency for writing to crossbar (in us)
+  mvm_execute_latency: 1.4  # Latency for executing MVM operation (in us)
+# Mapper parameters
+mapper:
+  mapping_type: differential  # Type of mapping for weights to crossbar cells (Options: differential, linear-scaling)
