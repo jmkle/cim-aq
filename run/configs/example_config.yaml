@@ -1,0 +1,58 @@
+---
+# CIM-AQ Full Workflow Configuration - Example
+# Two-stage workflow: discover policy on ImageNet100, apply on full ImageNet
+# Model Configuration
+models:
+  quant_model: qvgg16
+  fp32_model: custom_vgg16
+# Dataset Configuration  
+datasets:
+  small:
+    name: imagenet100
+    root: data/imagenet100
+  large:
+    name: imagenet
+    root: data/imagenet
+    enabled: true
+# Quantization Configuration
+quantization:
+  max_accuracy_drop: 1.0
+  min_bit: 2
+  max_bit: 8
+  force_first_last_layer: true
+  consider_cell_resolution: false
+# Training Configuration
+training:
+  # Learning rates for different stages and datasets
+  learning_rates:
+    small_dataset:
+      fp32_pretraining: 0.0005  # Learning rate for FP32 model fine-tuning on small dataset
+      int8_pretraining: 0.001  # Learning rate for INT8 model pre-fine-tuning on small dataset  
+      mixed_precision_finetuning: 0.0005  # Learning rate for final mixed precision fine-tuning on small dataset
+      rl_finetune: 0.001  # Learning rate for fine-tuning during RL search
+    large_dataset:
+      fp32_pretraining: 0.0003  # Learning rate for FP32 model fine-tuning on large dataset (lower for stability)
+      int8_pretraining: 0.0008  # Learning rate for INT8 model pre-fine-tuning on large dataset
+      mixed_precision_finetuning: 0.0003  # Learning rate for final mixed precision fine-tuning on large dataset
+  rl:
+    train_episodes: 600
+  small_dataset:
+    fp32_epochs: 30
+    int8_epochs: 30
+    search_finetune_epochs: 3
+    final_finetune_epochs: 30
+  large_dataset:
+    fp32_epochs: 50
+    int8_epochs: 50
+    final_finetune_epochs: 50
+# Output Configuration
+output:
+  prefix: experiment1
+# Device Configuration
+device:
+  gpu_id: 0,1  # Using multiple GPUs for faster training
+# Logging Configuration
+logging:
+  wandb:
+    enable: true
+    project: cim-aq-quantization

@@ -1,0 +1,58 @@
+---
+# CIM-AQ Full Workflow Configuration Template
+# Copy this file and modify the values as needed
+# Model Configuration
+models:
+  quant_model: qresnet18  # Quantized model architecture
+  fp32_model: custom_resnet18  # Full precision model architecture
+# Dataset Configuration  
+datasets:
+  small:
+    name: imagenet100  # Small dataset name (for RL search)
+    root: data/imagenet100  # Path relative to repo root, or absolute path
+  large:
+    name: imagenet  # Large dataset name (for final training)
+    root: data/imagenet  # Path relative to repo root, or absolute path
+    enabled: true  # Whether to run the large dataset stage
+# Quantization Configuration
+quantization:
+  max_accuracy_drop: 1.0  # Maximum allowed accuracy drop in percentage points
+  min_bit: 2  # Minimum bit-width
+  max_bit: 8  # Maximum bit-width
+  force_first_last_layer: true  # Force first and last layers to high precision
+  consider_cell_resolution: true  # Whether to consider cell resolution for weight bit widths
+# Training Configuration
+training:
+  # Learning rates for different stages and datasets
+  learning_rates:
+    small_dataset:
+      fp32_pretraining: 0.005  # Learning rate for FP32 model fine-tuning on small dataset
+      int8_pretraining: 0.00005  # Learning rate for INT8 model pre-fine-tuning on small dataset  
+      mixed_precision_finetuning: 0.001  # Learning rate for final mixed precision fine-tuning on small dataset
+      rl_finetune: 0.001  # Learning rate for fine-tuning during RL search
+    large_dataset:
+      fp32_pretraining: 0.00005  # Learning rate for FP32 model fine-tuning on large dataset
+      int8_pretraining: 0.00001  # Learning rate for INT8 model pre-fine-tuning on large dataset
+      mixed_precision_finetuning: 0.0005  # Learning rate for final mixed precision fine-tuning on large dataset
+  rl:
+    train_episodes: 600  # Number of training episodes for RL search
+  small_dataset:
+    fp32_epochs: 30  # Number of epochs for FP32 model fine-tuning
+    int8_epochs: 30  # Number of epochs for 8-bit pre-fine-tuning
+    search_finetune_epochs: 3  # Number of epochs for fine-tuning during search
+    final_finetune_epochs: 30  # Number of epochs for final fine-tuning
+  large_dataset:
+    fp32_epochs: 30  # Number of epochs for FP32 model fine-tuning
+    int8_epochs: 30  # Number of epochs for 8-bit pre-fine-tuning
+    final_finetune_epochs: 30  # Number of epochs for final fine-tuning
+# Device Configuration
+device:
+  gpu_id: '1'  # GPU ID(s) for CUDA_VISIBLE_DEVICES (e.g., "0", "0,1", "0,1,2,3")
+# Output Configuration
+output:
+  prefix: both_constraints  # Optional prefix for output folders
+# Logging Configuration
+logging:
+  wandb:
+    enable: true  # Enable Weights & Biases logging
+    project: cim-aq-quantization  # W&B project name
