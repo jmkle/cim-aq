@@ -34,6 +34,11 @@ class LinearQuantizeEnv:
         # default setting
         self.quantizable_layer_types = [QConv2d, QLinear]
 
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
+        # Set device
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+
         # save options
         self.model = model
         self.model_for_measure = deepcopy(model)
@@ -46,7 +51,7 @@ class LinearQuantizeEnv:
                                    lr=args.finetune_lr,
                                    momentum=0.9,
                                    weight_decay=1e-5)
-        self.criterion = nn.CrossEntropyLoss().cuda()
+        self.criterion = nn.CrossEntropyLoss().to(self.device)
         self.pretrained_model = pretrained_model
         self.n_data_worker = n_data_worker
         self.batch_size = batch_size
@@ -84,6 +89,7 @@ class LinearQuantizeEnv:
         self.n_quantizable_layer = len(self.quantizable_idx)
 
         self.model.load_state_dict(self.pretrained_model, strict=True)
+        self.model = self.model.to(self.device)
         # self.org_acc = self._validate(self.val_loader, self.model)
         self.org_acc = self._validate(self.train_loader, self.model)
         # build embedding (static part), same as pruning
@@ -190,6 +196,7 @@ class LinearQuantizeEnv:
     def reset(self):
         # restore env by loading the pretrained model
         self.model.load_state_dict(self.pretrained_model, strict=False)
+        self.model = self.model.to(self.device)
         self.optimizer = optim.SGD(self.model.parameters(),
                                    lr=self.finetune_lr,
                                    momentum=0.9,
@@ -388,7 +395,8 @@ class LinearQuantizeEnv:
         bar = Bar('train:', max=len(train_loader))
         for epoch in range(epochs):
             for i, (inputs, targets) in enumerate(train_loader):
-                input_var, target_var = inputs.cuda(), targets.cuda()
+                input_var, target_var = inputs.to(self.device), targets.to(
+                    self.device)
 
                 # measure data loading time
                 data_time.update(time.time() - end)
@@ -398,7 +406,7 @@ class LinearQuantizeEnv:
                 loss = self.criterion(output, target_var)
 
                 # measure accuracy and record loss
-                prec1, prec5 = accuracy(output.data, target_var, topk=(1, 5))
+                prec1, prec5 = accuracy(output, target_var, topk=(1, 5))
                 losses.update(loss.item(), inputs.size(0))
                 top1.update(prec1.item(), inputs.size(0))
                 top5.update(prec5.item(), inputs.size(0))
@@ -463,14 +471,15 @@ class LinearQuantizeEnv:
                 # measure data loading time
                 data_time.update(time.time() - end)
 
-                input_var, target_var = inputs.cuda(), targets.cuda()
+                input_var, target_var = inputs.to(self.device), targets.to(
+                    self.device)
 
                 # compute output
                 output = model(input_var)
                 loss = self.criterion(output, target_var)
 
                 # measure accuracy and record loss
-                prec1, prec5 = accuracy(output.data, target_var, topk=(1, 5))
+                prec1, prec5 = accuracy(output, target_var, topk=(1, 5))
                 losses.update(loss.item(), inputs.size(0))
                 top1.update(prec1.item(), inputs.size(0))
                 top5.update(prec5.item(), inputs.size(0))

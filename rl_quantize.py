@@ -323,14 +323,17 @@ if __name__ == "__main__":
     text_writer = open(os.path.join(args.output, 'log.txt'), 'w')
     print('==> Output path: {}...'.format(args.output))
 
-    # Use CUDA
+    # Use CUDA if available, otherwise use CPU
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
-    assert torch.cuda.is_available(), 'CUDA is needed for CNN'
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'==> Using device: {device}')
+    print(f'==> GPU IDs: {args.gpu_id}')
 
     if args.seed > 0:
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
-        torch.cuda.manual_seed_all(args.seed)
+        if device.type == 'cuda':
+            torch.cuda.manual_seed_all(args.seed)
 
     if args.dataset == 'imagenet':
         num_classes = 1000
@@ -342,9 +345,9 @@ if __name__ == "__main__":
                                        num_classes=num_classes)
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
         model.features = torch.nn.DataParallel(model.features)
-        model.cuda()
+        model.to(device)
     else:
-        model = torch.nn.DataParallel(model).cuda()
+        model = torch.nn.DataParallel(model).to(device)
     pretrained_model = deepcopy(model.state_dict())
     print('    Total params: %.2fM' %
           (sum(p.numel() for p in model.parameters()) / 1000000.0))
@@ -378,6 +381,7 @@ if __name__ == "__main__":
     args.rmsize = args.rmsize * len(env.quantizable_idx)  # for each layer
     print('** Actual replay buffer size: {}'.format(args.rmsize))
     agent = DDPG(nb_states, nb_actions, args)
+    agent.to(device)
 
     best_policy, best_reward = train(
         args.train_episode,

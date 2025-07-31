@@ -112,20 +112,19 @@ def accuracy(output, target, topk=(1, )):
     return res
 
 
-USE_CUDA = torch.cuda.is_available()
-FLOAT = torch.cuda.FloatTensor if USE_CUDA else torch.FloatTensor
-from torch.autograd import Variable
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def to_numpy(var):
     # return var.cpu().data.numpy()
-    return var.cpu().data.numpy() if USE_CUDA else var.data.numpy()
+    return var.cpu().detach().numpy() if var.is_cuda else var.detach().numpy()
 
 
-def to_tensor(ndarray, volatile=False, requires_grad=False, dtype=FLOAT):
-    return Variable(torch.from_numpy(ndarray),
-                    volatile=volatile,
-                    requires_grad=requires_grad).type(dtype)
+def to_tensor(ndarray, requires_grad=False, dtype=torch.float32):
+    return torch.tensor(ndarray,
+                        requires_grad=requires_grad,
+                        device=device,
+                        dtype=dtype)
 
 
 def sample_from_truncated_normal_distribution(lower, upper, mu, sigma, size=1):
@@ -268,7 +267,10 @@ def measure_model(model, H, W):
     global count_ops, count_params
     count_ops = 0
     count_params = 0
-    data = torch.zeros(1, 3, H, W).cuda()
+
+    # Get the device of the first model parameter
+    device = next(model.parameters()).device
+    data = torch.zeros(1, 3, H, W).to(device)
 
     def should_measure(x):
         return is_leaf(x)

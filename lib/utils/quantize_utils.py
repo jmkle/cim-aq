@@ -31,12 +31,14 @@ def k_means_cpu(weight, n_clusters, init='k-means++', max_iter=50):
     centroids = k_means.cluster_centers_
     labels = k_means.labels_
     labels = labels.reshape(org_shape)
-    return torch.from_numpy(centroids).cuda().view(
-        1, -1), torch.from_numpy(labels).int().cuda()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.from_numpy(centroids).to(device).view(
+        1, -1), torch.from_numpy(labels).int().to(device)
 
 
 def reconstruct_weight_from_k_means_result(centroids, labels):
-    weight = torch.zeros_like(labels).float().cuda()
+    device = labels.device
+    weight = torch.zeros_like(labels).float().to(device)
     for i, c in enumerate(centroids.cpu().numpy().squeeze()):
         weight[labels == i] = c.item()
     return weight
@@ -283,7 +285,7 @@ class QModule(nn.Module):
             if self._calibrate:
                 if self._a_bit < 5:
                     threshold = self._compute_threshold(
-                        inputs.data.cpu().numpy(), self._a_bit)
+                        inputs.detach().cpu().numpy(), self._a_bit)
                     estimate_activation_range = min(
                         min(self.init_range,
                             inputs.abs().max().item()), threshold)
@@ -335,7 +337,7 @@ class QModule(nn.Module):
             if self._calibrate:
                 if self._w_bit < 5:
                     threshold = self._compute_threshold(
-                        weight.data.cpu().numpy(), self._w_bit)
+                        weight.detach().cpu().numpy(), self._w_bit)
                 else:
                     threshold = weight.abs().max().item()
                 self.weight_range.data[0] = threshold
@@ -363,9 +365,9 @@ class QModule(nn.Module):
             if self._calibrate:
                 return bias
             ori_b = bias
-            threshold = ori_b.data.max().item() + 0.00001
+            threshold = ori_b.abs().max().item() + 0.00001
             scaling_factor = threshold / (pow(2., self._b_bit - 1) - 1.)
-            b = torch.clamp(ori_b.data, -threshold, threshold)
+            b = torch.clamp(ori_b, -threshold, threshold)
             b.div_(scaling_factor).round_().mul_(scaling_factor)
             # STE
             if self._fix_weight:
@@ -526,8 +528,8 @@ def calibrate(model, loader):
         if isinstance(module, QModule):
             module.set_calibrate(calibrate=True)
     inputs, _ = next(iter(loader))
-    # use 1 gpu to calibrate
-    inputs = inputs.to('cuda:0', non_blocking=True)
+    device = next(model.parameters()).device
+    inputs = inputs.to(device, non_blocking=True)
     with torch.no_grad():
         model(inputs)
     for name, module in model.named_modules():

@@ -11,7 +11,7 @@ from lib.utils.utils import (sample_from_truncated_normal_distribution,
                              to_numpy, to_tensor)
 
 criterion = nn.MSELoss()
-USE_CUDA = torch.cuda.is_available()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Actor(nn.Module):
@@ -123,7 +123,7 @@ class DDPG(object):
         self.is_training = True
 
         #
-        if USE_CUDA: self.cuda()
+        self.to(device)
 
         # moving average baseline
         self.moving_average = None
@@ -191,11 +191,11 @@ class DDPG(object):
         self.critic.eval()
         self.critic_target.eval()
 
-    def cuda(self):
-        self.actor.cuda()
-        self.actor_target.cuda()
-        self.critic.cuda()
-        self.critic_target.cuda()
+    def to(self, device):
+        self.actor.to(device)
+        self.actor_target.to(device)
+        self.critic.to(device)
+        self.critic_target.to(device)
 
     def observe(self, r_t, s_t, s_t1, a_t, done):
         if self.is_training:
@@ -232,9 +232,11 @@ class DDPG(object):
     def load_weights(self, output):
         if output is None: return
 
-        self.actor.load_state_dict(torch.load('{}/actor.pkl'.format(output)))
+        self.actor.load_state_dict(
+            torch.load('{}/actor.pkl'.format(output), map_location=device))
 
-        self.critic.load_state_dict(torch.load('{}/critic.pkl'.format(output)))
+        self.critic.load_state_dict(
+            torch.load('{}/critic.pkl'.format(output), map_location=device))
 
     def save_model(self, output):
         torch.save(self.actor.state_dict(), '{}/actor.pkl'.format(output))
@@ -242,7 +244,7 @@ class DDPG(object):
 
     def seed(self, s):
         torch.manual_seed(s)
-        if USE_CUDA:
+        if device.type == 'cuda':
             torch.cuda.manual_seed(s)
 
     def soft_update(self, target, source):

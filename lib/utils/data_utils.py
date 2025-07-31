@@ -18,7 +18,12 @@ def get_dataset(dataset_name,
                 batch_size,
                 n_worker,
                 data_root='data/imagenet',
-                for_inception=False):
+                for_inception=False,
+                device=None):
+    device = device or torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu")
+    pin_memory = device.type == 'cuda'
+
     print('==> Preparing data..')
     if dataset_name == 'imagenet':
         traindir = os.path.join(data_root, 'train')
@@ -41,7 +46,7 @@ def get_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    shuffle=True,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
 
         val_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
             valdir,
@@ -54,7 +59,7 @@ def get_dataset(dataset_name,
                                                  batch_size=batch_size,
                                                  shuffle=False,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
 
         n_class = 1000
     elif dataset_name == 'imagenet100':
@@ -78,7 +83,7 @@ def get_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    shuffle=True,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
 
         val_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
             valdir,
@@ -91,7 +96,7 @@ def get_dataset(dataset_name,
                                                  batch_size=batch_size,
                                                  shuffle=False,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
 
         n_class = 100
     elif dataset_name == 'imagenet10':
@@ -115,7 +120,7 @@ def get_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    shuffle=True,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
 
         val_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
             valdir,
@@ -128,7 +133,7 @@ def get_dataset(dataset_name,
                                                  batch_size=batch_size,
                                                  shuffle=False,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
 
         n_class = 10
     else:
@@ -145,7 +150,12 @@ def get_split_train_dataset(dataset_name,
                             random_seed=1,
                             data_root='data/imagenet',
                             for_inception=False,
-                            shuffle=True):
+                            shuffle=True,
+                            device=None):
+    device = device or torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu")
+    pin_memory = device.type == 'cuda'
+
     if shuffle:
         index_sampler = SubsetRandomSampler
     else:
@@ -203,12 +213,12 @@ def get_split_train_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    sampler=train_sampler,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
         val_loader = torch.utils.data.DataLoader(valset,
                                                  batch_size=batch_size,
                                                  sampler=val_sampler,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
         n_class = 1000
     elif dataset_name == 'imagenet100':
 
@@ -254,12 +264,12 @@ def get_split_train_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    sampler=train_sampler,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
         val_loader = torch.utils.data.DataLoader(valset,
                                                  batch_size=batch_size,
                                                  sampler=val_sampler,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
         n_class = 100
     else:
         raise NotImplementedError

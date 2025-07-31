@@ -164,14 +164,14 @@ lr_current = state['lr']
 
 # Use CUDA
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
-use_cuda = torch.cuda.is_available()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Random seed
 if args.manualSeed is None:
     args.manualSeed = random.randint(1, 10000)
 random.seed(args.manualSeed)
 torch.manual_seed(args.manualSeed)
-if use_cuda:
+if device.type == 'cuda':
     torch.cuda.manual_seed_all(args.manualSeed)
 
 best_acc = 0  # best test accuracy
@@ -188,7 +188,7 @@ def load_my_state_dict(model, state_dict):
             model_state[name].copy_(param_data)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
+def train(train_loader, model, criterion, optimizer, epoch, device):
     # switch to train mode
     model.train()
 
@@ -204,8 +204,7 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        if use_cuda:
-            inputs, targets = inputs.cuda(), targets.cuda()
+        inputs, targets = inputs.to(device), targets.to(device)
         inputs, targets = torch.autograd.Variable(
             inputs), torch.autograd.Variable(targets)
 
@@ -214,7 +213,7 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         loss = criterion(outputs, targets)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
         losses.update(loss.item(), inputs.size(0))
         top1.update(prec1.item(), inputs.size(0))
         top5.update(prec5.item(), inputs.size(0))
@@ -261,7 +260,7 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
     return losses.avg, top1.avg
 
 
-def test(val_loader, model, criterion, epoch, use_cuda):
+def test(val_loader, model, criterion, epoch, device):
     global best_acc
 
     batch_time = AverageMeter()
@@ -280,8 +279,7 @@ def test(val_loader, model, criterion, epoch, use_cuda):
             # measure data loading time
             data_time.update(time.time() - end)
 
-            if use_cuda:
-                inputs, targets = inputs.cuda(), targets.cuda()
+            inputs, targets = inputs.to(device), targets.to(device)
             inputs, targets = torch.autograd.Variable(
                 inputs, volatile=True), torch.autograd.Variable(targets)
 
@@ -290,7 +288,7 @@ def test(val_loader, model, criterion, epoch, use_cuda):
             loss = criterion(outputs, targets)
 
             # measure accuracy and record loss
-            prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+            prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
             losses.update(loss.item(), inputs.size(0))
             top1.update(prec1.item(), inputs.size(0))
             top5.update(prec5.item(), inputs.size(0))
@@ -369,7 +367,7 @@ if __name__ == '__main__':
     cudnn.benchmark = True
 
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().cuda()
+    criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.SGD(model.parameters(),
                           lr=args.lr,
                           momentum=args.momentum,
@@ -382,7 +380,7 @@ if __name__ == '__main__':
         except ImportError:
             raise ImportError(
                 "Please install apex from https://github.com/NVIDIA/apex")
-        model.cuda()
+        model.to(device)
         model, optimizer = apex.amp.initialize(model,
                                                optimizer,
                                                opt_level=args.half_type)
@@ -418,7 +416,7 @@ if __name__ == '__main__':
             else:
                 layer.w_bit = quantize_layer_bit_dict[i][0]
                 layer.a_bit = quantize_layer_bit_dict[i][1]
-        model = model.cuda()
+        model = model.to(device)
         model = calibrate(model, train_loader)
     else:
         quantizable_idx = []
@@ -451,9 +449,9 @@ if __name__ == '__main__':
 
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
         model.features = torch.nn.DataParallel(model.features)
-        model = model.cuda()
+        model = model.to(device)
     else:
-        model = torch.nn.DataParallel(model).cuda()
+        model = torch.nn.DataParallel(model).to(device)
 
     # Resume
     title = 'ImageNet-' + args.arch
@@ -463,11 +461,12 @@ if __name__ == '__main__':
         assert os.path.isfile(
             args.resume), 'Error: no checkpoint directory found!'
         args.checkpoint = os.path.dirname(args.resume)
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, map_location=device)
         best_acc = checkpoint['best_acc']
         print(best_acc)
         start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['state_dict'], strict=False)
+        model.to(device)
         optimizer.load_state_dict(checkpoint['optimizer'])
         if os.path.isfile(os.path.join(args.checkpoint, 'log.txt')):
             logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
@@ -493,7 +492,7 @@ if __name__ == '__main__':
     if args.evaluate:
         print('\nEvaluation only')
         test_loss, test_acc = test(val_loader, model, criterion, start_epoch,
-                                   use_cuda)
+                                   device)
         print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
         exit()
 
@@ -517,9 +516,8 @@ if __name__ == '__main__':
               (epoch + 1, args.epochs, lr_current))
 
         train_loss, train_acc = train(train_loader, model, criterion,
-                                      optimizer, epoch, use_cuda)
-        test_loss, test_acc = test(val_loader, model, criterion, epoch,
-                                   use_cuda)
+                                      optimizer, epoch, device)
+        test_loss, test_acc = test(val_loader, model, criterion, epoch, device)
 
         # append logger file
         logger.append([lr_current, train_loss, test_loss, train_acc, test_acc])
