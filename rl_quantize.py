@@ -300,6 +300,7 @@ if __name__ == "__main__":
                         default='default',
                         type=str,
                         help='Resuming model path for testing')
+    parser.add_argument('--amp', action='store_true', help='use amp')
     # Architecture
     parser.add_argument('--arch',
                         '-a',
