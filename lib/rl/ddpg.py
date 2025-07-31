@@ -1,6 +1,7 @@
 import os
+import sys
 
-os.sys.path.insert(0, os.path.abspath("../.."))
+sys.path.insert(0, os.path.abspath("../.."))
 import numpy as np
 import torch
 import torch.nn as nn
@@ -211,9 +212,14 @@ class DDPG(object):
         # assert episode >= self.warmup, 'Episode: {} warmup: {}'.format(episode, self.warmup)
         action = to_numpy(self.actor(to_tensor(np.array(s_t).reshape(
             1, -1)))).squeeze(0)
-        delta = self.init_delta * (self.delta_decay**(episode - self.warmup))
-        # action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
-        #from IPython import embed; embed() # TODO eable decay_epsilon=True
+
+        # Increased exploration during early training
+        if episode < self.warmup:
+            delta = self.init_delta
+        else:
+            delta = self.init_delta * (self.delta_decay
+                                       **(episode - self.warmup))
+
         action = sample_from_truncated_normal_distribution(lower=self.lbound,
                                                            upper=self.rbound,
                                                            mu=action,

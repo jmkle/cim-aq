@@ -9,6 +9,7 @@ import random
 import shutil
 import time
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -142,6 +143,10 @@ parser.add_argument('--half_type',
                     default='O1',
                     type=str,
                     help='half type: O0/O1/O2/O3')
+parser.add_argument('--strategy_file',
+                    required=True,
+                    type=str,
+                    help='path to strategy file')
 # Architecture
 parser.add_argument('--arch',
                     '-a',
@@ -198,7 +203,6 @@ def load_my_state_dict(model, state_dict):
             continue
         param_data = param.data
         if model_state[name].shape == param_data.shape:
-            # print("load%s"%name)
             model_state[name].copy_(param_data)
 
 
@@ -355,6 +359,9 @@ def adjust_learning_rate(optimizer, epoch):
 if __name__ == '__main__':
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
 
+    if args.resume:
+        args.checkpoint = os.path.dirname(args.resume)
+
     if not os.path.isdir(args.checkpoint):
         os.makedirs(args.checkpoint)
 
@@ -363,6 +370,10 @@ if __name__ == '__main__':
         batch_size=args.train_batch,
         n_worker=args.workers,
         data_root=args.data)
+
+    quantization_strategy = np.load(args.strategy_file).tolist()
+
+    main_logger.info(f'Quantization strategy: {quantization_strategy}')
 
     model = models.__dict__[args.arch](pretrained=args.pretrained)
     main_logger.info(
@@ -387,22 +398,9 @@ if __name__ == '__main__':
         # print(model)
         main_logger.info(quantizable_idx)
 
-        if 'mobilenetv2' in args.arch:
-            strategy = [[8, -1], [7, 7], [5, 6], [4, 6], [5, 6], [5, 7],
-                        [5, 6], [7, 4], [4, 6], [4, 6], [7, 7], [5, 6], [4, 6],
-                        [7, 3], [5, 7], [4, 7], [7, 3], [5, 7], [4, 7], [7, 7],
-                        [4, 7], [4, 7], [6, 4], [6, 7], [4, 7], [7, 4], [6, 7],
-                        [5, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [6, 7],
-                        [6, 4], [5, 7], [6, 7], [6, 4], [5, 7], [6, 7], [7, 7],
-                        [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7],
-                        [7, 7], [7, 7], [4, 7], [7, 7], [8, 8]]
-        else:
-            raise NotImplementedError
-
-        main_logger.info(strategy)
         quantize_layer_bit_dict = {
             n: b
-            for n, b in zip(quantizable_idx, strategy)
+            for n, b in zip(quantizable_idx, quantization_strategy)
         }
         for i, layer in enumerate(model.modules()):
             if i not in quantizable_idx:
@@ -419,33 +417,27 @@ if __name__ == '__main__':
                 quantizable_idx.append(i)
         main_logger.info(quantizable_idx)
 
-        if args.arch.startswith('resnet50'):
-            # resnet50 ratio 10%
-            strategy = [
-                6, 6, 6, 6, 5, 5, 6, 5, 5, 6, 5, 5, 6, 5, 5, 5, 5, 5, 4, 5, 4,
-                4, 5, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 4,
-                3, 4, 3, 3, 2, 3, 2, 3, 3, 2, 3, 4
-            ]
-        else:
-            # you can put your own strategy here
-            raise NotImplementedError
-        main_logger.info('strategy for ' + args.arch + ': ', strategy)
 
-        assert len(quantizable_idx) == len(strategy), \
+        assert len(quantizable_idx) == len(quantization_strategy), \
             'You should provide the same number of bit setting as layer list for weight quantization!'
         centroid_label_dict = quantize_model(model,
                                              quantizable_idx,
-                                             strategy,
+                                             quantization_strategy,
                                              mode='cpu',
                                              quantize_bias=False,
                                              centroids_init='k-means++',
                                              max_iter=50)
 
-    if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-        model.features = torch.nn.DataParallel(model.features)
-        model = model.to(device)
+    if torch.cuda.device_count() > 1:
+        if (args.arch.startswith('alexnet') or args.arch.startswith('vgg')
+                or args.arch.startswith('qalexnet')
+                or args.arch.startswith('qvgg')):
+            model.features = torch.nn.DataParallel(model.features)
+            model.to(device)
+        else:
+            model = torch.nn.DataParallel(model).to(device)
     else:
-        model = torch.nn.DataParallel(model).to(device)
+        model = model.to(device)
 
     # Resume
     title = 'ImageNet-' + args.arch
