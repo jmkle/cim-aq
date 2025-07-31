@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
-from progress.bar import Bar
+import wandb
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
@@ -155,6 +155,15 @@ parser.add_argument('--gpu_id',
                     default='1',
                     type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
+
+# W&B options
+parser.add_argument('--wandb_enable',
+                    action='store_true',
+                    help='enable Weights & Biases logging')
+parser.add_argument('--wandb_project',
+                    default='haq-quantization',
+                    type=str,
+                    help='W&B project name')
 
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
@@ -402,12 +411,20 @@ if __name__ == '__main__':
     tf_writer = SummaryWriter(log_dir=os.path.join(args.checkpoint, 'logs'))
     main_logger.info(f'save the checkpoint to {args.checkpoint}')
 
+    # Initialize W&B if enabled
+    if args.wandb_enable:
+        wandb_run = wandb.init(
+            project=args.wandb_project,
+            name=f"pretrain_{os.path.basename(args.checkpoint)}",
+            config=vars(args),
+            tags=['pretraining', args.arch, args.data_name])
+
     if args.evaluate:
         main_logger.info('\nEvaluation only')
         test_loss, test_acc, test_acc5 = test(val_loader, model, criterion,
                                               start_epoch, device)
         main_logger.info(
-            f' Test Loss:  {test_loss:.8f}, Test Acc:  {test_acc:.4f}, Test Acc5: {test_acc5:.4f}'
+            f' Test Loss:  {test_loss:.8f}, Test Acc:  {test_acc:.4f}, Test Acc5:  {test_acc5:.4f}'
         )
         exit()
 
@@ -455,6 +472,10 @@ if __name__ == '__main__':
 
         for tag, value in info.items():
             tf_writer.add_scalar(tag, value, epoch)
+
+        # ============ W&B logging ============#
+        if args.wandb_enable:
+            wandb.log(info, step=epoch)
 
     logger.close()
 
