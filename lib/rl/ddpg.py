@@ -4,11 +4,10 @@ os.sys.path.insert(0, os.path.abspath("../.."))
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.optim import Adam
-
 from lib.rl.memory import SequentialMemory
 from lib.utils.utils import (sample_from_truncated_normal_distribution,
                              to_numpy, to_tensor)
+from torch.optim import Adam
 
 criterion = nn.MSELoss()
 USE_CUDA = torch.cuda.is_available()
