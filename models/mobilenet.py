@@ -1,50 +1,97 @@
-import os
+import math
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
+from brevitas.nn.quant_layer import ActQuantType
 
-os.sys.path.insert(0, os.path.abspath("../.."))
-import math
-
-from lib.utils.quantize_utils import QConv2d, QLinear
+from lib.utils.quantize_utils import (CommonInt8ActQuant, CommonQuantConv2d,
+                                      CommonQuantLinear, CommonUint8ActQuant,
+                                      save_pop)
 
 __all__ = ['MobileNet', 'mobilenet', 'qmobilenet']
 
 
-def conv_bn(inp, oup, stride, conv_layer=nn.Conv2d, half_wave=True):
+def conv_bn(inp: int,
+            oup: int,
+            stride: int,
+            conv_layer: Callable[..., nn.Module] = nn.Conv2d,
+            input_quant: ActQuantType = CommonUint8ActQuant,
+            quantization_strategy: list[list[int]] = [],
+            max_bit: int = 8) -> nn.Sequential:
+    if conv_layer == nn.Conv2d:
+        return nn.Sequential(conv_layer(inp, oup, 3, stride, 1, bias=False),
+                             nn.BatchNorm2d(oup), nn.ReLU(inplace=True))
+    else:
+        weight_bit_width, input_bit_width = save_pop(quantization_strategy,
+                                                     max_bit)
+        return nn.Sequential(
+            conv_layer(inp,
+                       oup,
+                       3,
+                       stride,
+                       1,
+                       bias=False,
+                       weight_bit_width=weight_bit_width,
+                       input_quant=input_quant,
+                       input_bit_width=input_bit_width), nn.BatchNorm2d(oup),
+            nn.ReLU(inplace=True))
+
+
+def conv_dw(inp: int,
+            oup: int,
+            stride: int,
+            conv_layer: Callable[..., nn.Module] = nn.Conv2d,
+            quantization_strategy: list[list[int]] = [],
+            max_bit: int = 8) -> nn.Sequential:
     if conv_layer == nn.Conv2d:
         return nn.Sequential(
-            conv_layer(inp, oup, 3, stride, 1, bias=False),
+            conv_layer(inp, inp, 3, stride, 1, groups=inp, bias=False),
+            nn.BatchNorm2d(inp),
+            nn.ReLU6(inplace=True),
+            conv_layer(inp, oup, 1, 1, 0, bias=False),
             nn.BatchNorm2d(oup),
-            # nn.ReLU6(inplace=True)
-            nn.ReLU(inplace=True))
+            nn.ReLU6(inplace=True),
+        )
     else:
+        weight_bit_width_1, input_bit_width_1 = save_pop(
+            quantization_strategy, max_bit)
+        weight_bit_width_2, input_bit_width_2 = save_pop(
+            quantization_strategy, max_bit)
         return nn.Sequential(
-            conv_layer(inp, oup, 3, stride, 1, bias=False,
-                       half_wave=half_wave),
+            conv_layer(inp,
+                       inp,
+                       3,
+                       stride,
+                       1,
+                       groups=inp,
+                       bias=False,
+                       weight_bit_width=weight_bit_width_1,
+                       input_bit_width=input_bit_width_1),
+            nn.BatchNorm2d(inp),
+            nn.ReLU6(inplace=True),
+            conv_layer(inp,
+                       oup,
+                       1,
+                       1,
+                       0,
+                       bias=False,
+                       weight_bit_width=weight_bit_width_2,
+                       input_bit_width=input_bit_width_2),
             nn.BatchNorm2d(oup),
-            # nn.ReLU6(inplace=True)
-            nn.ReLU(inplace=True))
-
-
-def conv_dw(inp, oup, stride, conv_layer=nn.Conv2d):
-    return nn.Sequential(
-        conv_layer(inp, inp, 3, stride, 1, groups=inp, bias=False),
-        nn.BatchNorm2d(inp),
-        nn.ReLU6(inplace=True),
-        conv_layer(inp, oup, 1, 1, 0, bias=False),
-        nn.BatchNorm2d(oup),
-        nn.ReLU6(inplace=True),
-    )
+            nn.ReLU6(inplace=True),
+        )
 
 
 class MobileNet(nn.Module):
 
     def __init__(self,
-                 num_classes=1000,
-                 conv_layer=nn.Conv2d,
-                 profile='normal',
-                 w_mul=1.):
+                 num_classes: int = 1000,
+                 conv_layer: Callable[..., nn.Module] = nn.Conv2d,
+                 profile: str = 'normal',
+                 w_mul: float = 1.,
+                 quantization_strategy: list[list[int]] = [],
+                 max_bit: int = 8) -> None:
         super(MobileNet, self).__init__()
 
         # original
@@ -64,25 +111,32 @@ class MobileNet(nn.Module):
                 1024, 1024, (2048, 2), 2048
             ]
 
-        if conv_layer == nn.Conv2d:
-            self.conv1 = conv_bn(3, in_planes, stride=2)
-        else:
-            self.conv1 = conv_bn(3,
-                                 in_planes,
-                                 stride=2,
-                                 conv_layer=conv_layer,
-                                 half_wave=False)
+        # Use signed quantization for first layer (to handle negative inputs)
+        self.conv1 = conv_bn(3,
+                             in_planes,
+                             stride=2,
+                             conv_layer=conv_layer,
+                             input_quant=CommonInt8ActQuant,
+                             quantization_strategy=quantization_strategy,
+                             max_bit=max_bit)
 
-        self.features = self._make_layers(in_planes, cfg, conv_layer)
+        self.features = self._make_layers(in_planes, cfg, conv_layer,
+                                          quantization_strategy, max_bit)
 
         if conv_layer == nn.Conv2d:
             self.classifier = nn.Sequential(nn.Linear(cfg[-1], num_classes), )
         else:
-            self.classifier = nn.Sequential(QLinear(cfg[-1], num_classes), )
+            weight_bit_width, input_bit_width = save_pop(
+                quantization_strategy, max_bit)
+            self.classifier = nn.Sequential(
+                CommonQuantLinear(cfg[-1],
+                                  num_classes,
+                                  weight_bit_width=weight_bit_width,
+                                  input_bit_width=input_bit_width), )
 
         self._initialize_weights()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv1(x)
         x = self.features(x)
         x = x.mean(3).mean(2)  # global average pooling
@@ -90,19 +144,27 @@ class MobileNet(nn.Module):
         x = self.classifier(x)
         return x
 
-    def _make_layers(self, in_planes, cfg, conv_layer):
+    def _make_layers(self, in_planes: int, cfg: list,
+                     conv_layer: Callable[..., nn.Module],
+                     quantization_strategy: list[list[int]],
+                     max_bit: int) -> nn.Sequential:
         layers = []
         for x in cfg:
             out_planes = x if isinstance(x, int) else x[0]
             stride = 1 if isinstance(x, int) else x[1]
             layers.append(
-                conv_dw(in_planes, out_planes, stride, conv_layer=conv_layer))
+                conv_dw(in_planes,
+                        out_planes,
+                        stride,
+                        conv_layer=conv_layer,
+                        quantization_strategy=quantization_strategy,
+                        max_bit=max_bit))
             in_planes = out_planes
         return nn.Sequential(*layers)
 
-    def _initialize_weights(self):
+    def _initialize_weights(self) -> None:
         for m in self.modules():
-            if isinstance(m, nn.Conv2d) or type(m) == QConv2d:
+            if isinstance(m, nn.Conv2d) or type(m) == CommonQuantConv2d:
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
                 m.weight.data.normal_(0, math.sqrt(2. / n))
                 if m.bias is not None:
@@ -110,13 +172,13 @@ class MobileNet(nn.Module):
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
-            elif isinstance(m, nn.Linear) or type(m) == QLinear:
+            elif isinstance(m, nn.Linear) or type(m) == CommonQuantLinear:
                 n = m.weight.size(1)
                 m.weight.data.normal_(0, 0.01)
                 m.bias.data.zero_()
 
 
-def mobilenet(pretrained=False, **kwargs):
+def mobilenet(pretrained: bool = False, **kwargs) -> MobileNet:
     model = MobileNet(**kwargs)
     if pretrained:
         # Load pretrained model.
@@ -124,8 +186,14 @@ def mobilenet(pretrained=False, **kwargs):
     return model
 
 
-def qmobilenet(pretrained=False, **kwargs):
-    model = MobileNet(conv_layer=QConv2d, **kwargs)
+def qmobilenet(pretrained: bool = False,
+               quantization_strategy: list[list[int]] = [],
+               max_bit: int = 8,
+               **kwargs) -> MobileNet:
+    model = MobileNet(conv_layer=CommonQuantConv2d,
+                      quantization_strategy=quantization_strategy,
+                      max_bit=max_bit,
+                      **kwargs)
     if pretrained:
         # Load pretrained model.
         raise NotImplementedError

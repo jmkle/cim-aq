@@ -5,12 +5,14 @@
 import argparse
 import math
 import os
+import pickle
+import time
 from copy import deepcopy
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
 import torch
-import torch.backends.cudnn as cudnn
 import torchvision.models as models
 import wandb
 from torch.utils.tensorboard import SummaryWriter
@@ -538,18 +540,6 @@ if __name__ == "__main__":
         num_classes = 100
     else:
         raise NotImplementedError(f"Unsupported dataset: {args.dataset}")
-    
-    model = models.__dict__[args.arch](pretrained=True,
-                                       num_classes=num_classes)
-    if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-        model.features = torch.nn.DataParallel(model.features)
-        model.to(device)
-    else:
-        model = torch.nn.DataParallel(model).to(device)
-    pretrained_model = deepcopy(model.state_dict())
-    logger.info('    Total params: %.2fM' %
-                (sum(p.numel() for p in model.parameters()) / 1000000.0))
-    cudnn.benchmark = True
 
     logger.info(f'==> Loading model: {args.arch}')
     logger.info(f'==> Dataset: {args.dataset} (classes: {num_classes})')
@@ -563,15 +553,7 @@ if __name__ == "__main__":
         f'==> Force first and last layer to high precision: {args.force_first_last_layer}'
     )
 
-    env = LinearQuantizeEnv(model,
-                            pretrained_model,
-                            args.dataset,
-                            args.dataset_root,
-                            compress_ratio=args.preserve_ratio,
-                            n_data_worker=args.n_worker,
-                            batch_size=args.data_bsize,
-                            args=args,
-                            float_bit=args.float_bit)
+    env = LinearQuantizeEnv(args)
 
     nb_states = env.layer_embedding.shape[1]
     nb_actions = 1  # actions for weight and activation quantization

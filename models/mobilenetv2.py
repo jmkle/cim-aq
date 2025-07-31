@@ -1,44 +1,83 @@
 import math
-import os
+from collections.abc import Callable
+from pathlib import Path
 
 import torch
 import torch.nn as nn
+from brevitas.nn.quant_layer import ActQuantType
 
 from lib.utils.logger import logger
-from lib.utils.quantize_utils import QConv2d, QLinear
+from lib.utils.quantize_utils import (CommonInt8ActQuant, CommonQuantConv2d,
+                                      CommonQuantLinear, CommonUint8ActQuant,
+                                      save_pop)
 
 __all__ = ['MobileNetV2', 'mobilenetv2', 'qmobilenetv2']
 
 
-def conv_bn(inp, oup, stride, conv_layer=nn.Conv2d, half_wave=True):
+def conv_bn(inp: int,
+            oup: int,
+            stride: int,
+            conv_layer: Callable[..., nn.Module] = nn.Conv2d,
+            input_quant: ActQuantType = CommonUint8ActQuant,
+            quantization_strategy: list[list[int]] = [],
+            max_bit: int = 8) -> nn.Sequential:
     if conv_layer == nn.Conv2d:
         return nn.Sequential(conv_layer(inp, oup, 3, stride, 1, bias=False),
                              nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
     else:
+        weight_bit_width, input_bit_width = save_pop(quantization_strategy,
+                                                     max_bit)
         return nn.Sequential(
-            conv_layer(inp, oup, 3, stride, 1, bias=False,
-                       half_wave=half_wave), nn.BatchNorm2d(oup),
-            nn.ReLU6(inplace=True))
+            conv_layer(
+                inp,
+                oup,
+                3,
+                stride,
+                1,
+                bias=False,
+                weight_bit_width=weight_bit_width,
+                input_bit_width=input_bit_width,
+            ), nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
 
 
-def conv_1x1_bn(inp, oup, conv_layer=nn.Conv2d, half_wave=True):
+def conv_1x1_bn(inp: int,
+                oup: int,
+                conv_layer: Callable[..., nn.Module] = nn.Conv2d,
+                quantization_strategy: list[list[int]] = [],
+                max_bit: int = 8) -> nn.Sequential:
     if conv_layer == nn.Conv2d:
         return nn.Sequential(conv_layer(inp, oup, 1, 1, 0, bias=False),
                              nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
     else:
+        weight_bit_width, input_bit_width = save_pop(quantization_strategy,
+                                                     max_bit)
         return nn.Sequential(
-            conv_layer(inp, oup, 1, 1, 0, bias=False, half_wave=half_wave),
-            nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
+            conv_layer(inp,
+                       oup,
+                       1,
+                       1,
+                       0,
+                       bias=False,
+                       weight_bit_width=weight_bit_width,
+                       input_bit_width=input_bit_width), nn.BatchNorm2d(oup),
+            nn.ReLU6(inplace=True))
 
 
-def make_divisible(x, divisible_by=8):
+def make_divisible(x: float, divisible_by: int = 8) -> int:
     import numpy as np
     return int(np.ceil(x * 1. / divisible_by) * divisible_by)
 
 
 class InvertedResidual(nn.Module):
 
-    def __init__(self, inp, oup, stride, expand_ratio, conv_layer=nn.Conv2d):
+    def __init__(self,
+                 inp: int,
+                 oup: int,
+                 stride: int,
+                 expand_ratio: int,
+                 conv_layer: Callable[..., nn.Module] = nn.Conv2d,
+                 quantization_strategy: list[list[int]] = [],
+                 max_bit: int = 8) -> None:
         super(InvertedResidual, self).__init__()
         self.stride = stride
         assert stride in [1, 2]
@@ -47,21 +86,51 @@ class InvertedResidual(nn.Module):
         self.use_res_connect = self.stride == 1 and inp == oup
 
         if expand_ratio == 1:
-            self.conv = nn.Sequential(
-                # dw
-                conv_layer(hidden_dim,
-                           hidden_dim,
-                           3,
-                           stride,
-                           1,
-                           groups=hidden_dim,
-                           bias=False),
-                nn.BatchNorm2d(hidden_dim),
-                nn.ReLU6(inplace=True),
-                # pw-linear
-                conv_layer(hidden_dim, oup, 1, 1, 0, bias=False),
-                nn.BatchNorm2d(oup),
-            )
+            if conv_layer == nn.Conv2d:
+                self.conv = nn.Sequential(
+                    # dw
+                    conv_layer(hidden_dim,
+                               hidden_dim,
+                               3,
+                               stride,
+                               1,
+                               groups=hidden_dim,
+                               bias=False),
+                    nn.BatchNorm2d(hidden_dim),
+                    nn.ReLU6(inplace=True),
+                    # pw-linear
+                    conv_layer(hidden_dim, oup, 1, 1, 0, bias=False),
+                    nn.BatchNorm2d(oup),
+                )
+            else:
+                weight_bit_width_1, input_bit_width_1 = save_pop(
+                    quantization_strategy, max_bit)
+                weight_bit_width_2, input_bit_width_2 = save_pop(
+                    quantization_strategy, max_bit)
+                self.conv = nn.Sequential(
+                    # dw
+                    conv_layer(hidden_dim,
+                               hidden_dim,
+                               3,
+                               stride,
+                               1,
+                               groups=hidden_dim,
+                               bias=False,
+                               weight_bit_width=weight_bit_width_1,
+                               input_bit_width=input_bit_width_1),
+                    nn.BatchNorm2d(hidden_dim),
+                    nn.ReLU6(inplace=True),
+                    # pw-linear
+                    conv_layer(hidden_dim,
+                               oup,
+                               1,
+                               1,
+                               0,
+                               bias=False,
+                               weight_bit_width=weight_bit_width_2,
+                               input_bit_width=input_bit_width_2),
+                    nn.BatchNorm2d(oup),
+                )
         elif conv_layer == nn.Conv2d:
             self.conv = nn.Sequential(
                 # pw
@@ -83,6 +152,12 @@ class InvertedResidual(nn.Module):
                 nn.BatchNorm2d(oup),
             )
         else:
+            weight_bit_width_1, input_bit_width_1 = save_pop(
+                quantization_strategy, max_bit)
+            weight_bit_width_2, input_bit_width_2 = save_pop(
+                quantization_strategy, max_bit)
+            weight_bit_width_3, input_bit_width_3 = save_pop(
+                quantization_strategy, max_bit)
             self.conv = nn.Sequential(
                 # pw
                 conv_layer(inp,
@@ -91,7 +166,8 @@ class InvertedResidual(nn.Module):
                            1,
                            0,
                            bias=False,
-                           half_wave=False),
+                           weight_bit_width=weight_bit_width_1,
+                           input_bit_width=input_bit_width_1),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # dw
@@ -101,15 +177,24 @@ class InvertedResidual(nn.Module):
                            stride,
                            1,
                            groups=hidden_dim,
-                           bias=False),
+                           bias=False,
+                           weight_bit_width=weight_bit_width_2,
+                           input_bit_width=input_bit_width_2),
                 nn.BatchNorm2d(hidden_dim),
                 nn.ReLU6(inplace=True),
                 # pw-linear
-                conv_layer(hidden_dim, oup, 1, 1, 0, bias=False),
+                conv_layer(hidden_dim,
+                           oup,
+                           1,
+                           1,
+                           0,
+                           bias=False,
+                           weight_bit_width=weight_bit_width_3,
+                           input_bit_width=input_bit_width_3),
                 nn.BatchNorm2d(oup),
             )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.use_res_connect:
             return x + self.conv(x)
         else:
@@ -119,15 +204,17 @@ class InvertedResidual(nn.Module):
 class MobileNetV2(nn.Module):
 
     def __init__(self,
-                 num_classes=1000,
-                 input_size=224,
-                 width_mult=1.,
-                 block=InvertedResidual,
-                 conv_layer=nn.Conv2d):
+                 num_classes: int = 1000,
+                 input_size: int = 224,
+                 width_mult: float = 1.0,
+                 block: Callable[..., nn.Module] = InvertedResidual,
+                 conv_layer: Callable[..., nn.Module] = nn.Conv2d,
+                 quantization_strategy: list[list[int]] = [],
+                 max_bit: int = 8) -> None:
         super(MobileNetV2, self).__init__()
         input_channel = 32
         last_channel = 1280
-        interverted_residual_setting = [
+        inverted_residual_setting = [
             # t, c, n, s
             [1, 16, 1, 1],
             [6, 24, 2, 2],
@@ -143,9 +230,17 @@ class MobileNetV2(nn.Module):
         # input_channel = make_divisible(input_channel * width_mult)  # first channel is always 32!
         self.last_channel = make_divisible(
             last_channel * width_mult) if width_mult > 1.0 else last_channel
-        self.features = [conv_bn(3, input_channel, 2, conv_layer=conv_layer)]
+        self.features = [
+            conv_bn(3,
+                    input_channel,
+                    2,
+                    conv_layer=conv_layer,
+                    input_quant=CommonInt8ActQuant,
+                    quantization_strategy=quantization_strategy,
+                    max_bit=max_bit)
+        ]
         # building inverted residual blocks
-        for t, c, n, s in interverted_residual_setting:
+        for t, c, n, s in inverted_residual_setting:
             if conv_layer is not nn.Conv2d:
                 output_channel = make_divisible(c * width_mult)
             else:
@@ -157,21 +252,26 @@ class MobileNetV2(nn.Module):
                               output_channel,
                               s,
                               expand_ratio=t,
-                              conv_layer=conv_layer))
+                              conv_layer=conv_layer,
+                              quantization_strategy=quantization_strategy,
+                              max_bit=max_bit))
                 else:
                     self.features.append(
                         block(input_channel,
                               output_channel,
                               1,
                               expand_ratio=t,
-                              conv_layer=conv_layer))
+                              conv_layer=conv_layer,
+                              quantization_strategy=quantization_strategy,
+                              max_bit=max_bit))
                 input_channel = output_channel
         # building last several layers
         self.features.append(
             conv_1x1_bn(input_channel,
                         self.last_channel,
                         conv_layer=conv_layer,
-                        half_wave=False))
+                        quantization_strategy=quantization_strategy,
+                        max_bit=max_bit))
         # make it nn.Sequential
         self.features = nn.Sequential(*self.features)
 
@@ -179,17 +279,24 @@ class MobileNetV2(nn.Module):
         if conv_layer == nn.Conv2d:
             self.classifier = nn.Linear(self.last_channel, num_classes)
         else:
-            self.classifier = QLinear(self.last_channel, num_classes)
+            weight_bit_width, input_bit_width = save_pop(
+                quantization_strategy, max_bit)
+            self.classifier = CommonQuantLinear(
+                self.last_channel,
+                num_classes,
+                weight_bit_width=weight_bit_width,
+                input_bit_width=input_bit_width,
+            )
 
         self._initialize_weights()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.features(x)
         x = x.mean(3).mean(2)
         x = self.classifier(x)
         return x
 
-    def _initialize_weights(self):
+    def _initialize_weights(self) -> None:
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
@@ -205,35 +312,35 @@ class MobileNetV2(nn.Module):
                 m.bias.data.zero_()
 
 
-def mobilenetv2(pretrained=False, **kwargs):
+def mobilenetv2(pretrained: bool = False, **kwargs) -> MobileNetV2:
     model = MobileNetV2(**kwargs)
     if pretrained:
         # Load pretrained model.
         path = 'pretrained/imagenet/mobilenetv2-150.pth.tar'
         logger.info('==> load pretrained mobilenetv2 model..')
-        assert os.path.isfile(path), 'Error: no checkpoint directory found!'
+        assert Path(path).is_file(), 'Error: no checkpoint directory found!'
         ch = torch.load(path)
         ch = {n.replace('module.', ''): v for n, v in ch['state_dict'].items()}
         model.load_state_dict(ch, strict=False)
     return model
 
 
-def qmobilenetv2(pretrained=False, num_classes=1000, **kwargs):
-    # model = MobileNetV2(conv_layer=QConv2d, **kwargs)
-    model = MobileNetV2(conv_layer=QConv2d, num_classes=1000, **kwargs)
+def qmobilenetv2(pretrained: bool = False,
+                 num_classes: int = 1000,
+                 quantization_strategy: list[list[int]] = [],
+                 max_bit: int = 8,
+                 **kwargs) -> MobileNetV2:
+    model = MobileNetV2(conv_layer=CommonQuantConv2d,
+                        num_classes=num_classes,
+                        quantization_strategy=quantization_strategy,
+                        max_bit=max_bit,
+                        **kwargs)
     if pretrained:
         # Load pretrained model.
         path = 'pretrained/imagenet/mobilenetv2-150.pth.tar'
         logger.info('==> load pretrained mobilenetv2 model..')
-        assert os.path.isfile(path), 'Error: no checkpoint directory found!'
+        assert Path(path).is_file(), 'Error: no checkpoint directory found!'
         ch = torch.load(path)
         ch = {n.replace('module.', ''): v for n, v in ch['state_dict'].items()}
         model.load_state_dict(ch, strict=False)
     return model
-
-
-if __name__ == '__main__':
-    # from ops.profile import profile
-    net = mobilenetv2()
-    flops, param = profile(net, input_size=(1, 3, 224, 224))
-    print(flops / 1e9, param / 1e6)

@@ -165,7 +165,7 @@ def measure_layer(layer, x):
     type_name = get_layer_info(layer)
 
     # ops_conv
-    if type_name in ['Conv2d', 'QConv2d']:
+    if type_name in ['Conv2d', 'CommonQuantConv2d']:
         out_h = int((x.size()[2] + 2 * layer.padding[0] -
                      layer.kernel_size[0]) / layer.stride[0] + 1)
         out_w = int((x.size()[3] + 2 * layer.padding[1] -
@@ -201,7 +201,7 @@ def measure_layer(layer, x):
         delta_params = get_layer_param(layer)
 
     # ops_linear
-    elif type_name in ['Linear', 'QLinear']:
+    elif type_name in ['Linear', 'CommonQuantLinear']:
         weight_ops = layer.weight.numel() * multi_add
         if layer.bias is not None:
             bias_ops = layer.bias.numel()
@@ -211,6 +211,33 @@ def measure_layer(layer, x):
         layer.in_w = 1
         delta_ops = weight_ops + bias_ops
         delta_params = get_layer_param(layer)
+        layer.flops = delta_ops
+        layer.params = delta_params
+
+    # ops_multihead_attention
+    elif type_name in ['MultiheadAttention', 'CommonQuantMultiheadAttention']:
+        # MHA input: (batch_size, seq_len, embed_dim)
+        _, seq_len, embed_dim = x.size()
+
+        # Store dimensions for state embedding
+        layer.in_h = seq_len
+        layer.in_w = embed_dim
+        layer.seq_len = seq_len
+
+        # Estimate MHA operations
+        # Q, K, V projections: seq_len * embed_dim * (3 * embed_dim)
+        qkv_ops = seq_len * embed_dim * (3 * embed_dim)
+
+        # Attention computation: num_heads * seq_len^2 * head_dim * 2 (for Q @ K^T and V @ A)
+        head_dim = embed_dim // layer.num_heads
+        attention_ops = layer.num_heads * seq_len**2 * head_dim * 2
+
+        # Output projection: seq_len * embed_dim * embed_dim
+        output_ops = seq_len * embed_dim * embed_dim
+
+        delta_ops = (qkv_ops + attention_ops + output_ops) * multi_add
+        delta_params = get_layer_param(layer)
+
         layer.flops = delta_ops
         layer.params = delta_params
 
@@ -238,31 +265,70 @@ def measure_model(model, H, W):
     data = torch.zeros(1, 3, H, W, device=device)
 
     def should_measure(x):
-        return is_leaf(x)
+        # Only measure actual computational layers, not Brevitas internal components
+        layer_type = get_layer_info(x)
 
-    def modify_forward(model):
-        for child in model.children():
+        # Brevitas quantized layers are not leaf nodes but should be measured
+        brevitas_layers = [
+            'CommonQuantConv2d', 'CommonQuantLinear',
+            'CommonQuantMultiheadAttention'
+        ]
+
+        # Traditional layers that are leaf nodes
+        leaf_measurable_types = [
+            'Conv2d', 'Linear', 'BatchNorm2d', 'AdaptiveAvgPool2d',
+            'Dropout2d', 'DropChannel', 'Dropout', 'ReLU', 'MaxPool2d',
+            'MultiheadAttention'
+        ]
+
+        # Measure Brevitas layers even if they're not leaf nodes
+        if layer_type in brevitas_layers:
+            return True
+
+        # Measure traditional layers if they are leaf nodes
+        return is_leaf(x) and layer_type in leaf_measurable_types
+
+    def modify_forward(module):
+        for child in module.children():
+
             if should_measure(child):
+                child.old_forward = child.forward
 
                 def new_forward(m):
 
                     def lambda_forward(x):
                         measure_layer(m, x)
-                        return m.old_forward(x)
+                        type_name = get_layer_info(m)
+
+                        # Skip the actual forward pass and instead return a zero tensor with the expected output shape
+                        # Conv2D
+                        if type_name == 'CommonQuantConv2d' and hasattr(
+                                m, 'out_channels'):
+                            b, _, _, _ = x.shape
+                            return x.new_zeros(b, m.out_channels, m.out_h,
+                                               m.out_w)
+                        # Linear
+                        if type_name == 'CommonQuantLinear' and hasattr(
+                                m, 'out_features'):
+                            b = x.shape[0]
+                            return x.new_zeros(b, m.out_features)
+                        # MultiheadAttention
+                        if type_name == 'CommonQuantMultiheadAttention':
+                            return x.new_zeros(x.size())
+                        # For other layers, return a zero tensor with the same shape as input
+                        return x.new_zeros(x.size())
 
                     return lambda_forward
 
-                child.old_forward = child.forward
                 child.forward = new_forward(child)
             else:
                 modify_forward(child)
 
-    def restore_forward(model):
-        for child in model.children():
-            # leaf node
-            if is_leaf(child) and hasattr(child, 'old_forward'):
+    def restore_forward(module):
+        for child in module.children():
+            if hasattr(child, 'old_forward'):
                 child.forward = child.old_forward
-                child.old_forward = None
+                del child.old_forward
             else:
                 restore_forward(child)
 

@@ -33,7 +33,9 @@ Current code base is tested under following environment:
 
 - Python 3.11.2
 - PyTorch 2.7.1
+- Brevitas 0.12.0
 - torchvision 0.22.1
+- Matplotlib 3.10.5
 - SciPy 1.16.1
 - TensorBoard 2.20.0
 - tqdm 4.67.1
@@ -194,6 +196,8 @@ cd utils && python format.py --fix
 See `requirements.txt` for up-to-date dependencies. Main requirements:
 
 ```shell
+brevitas>=0.12.0
+matplotlib>=3.10.5
 scipy>=1.16.1
 tensorboard>=2.20.0
 torch>=2.7.1

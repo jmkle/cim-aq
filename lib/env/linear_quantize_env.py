@@ -10,33 +10,51 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.optim as optim
-from progress.bar import Bar
+import torchvision.models as models
+import yaml
+from brevitas import config
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
 from tqdm import tqdm
 
+import models as customized_models
 from lib.utils.data_utils import get_split_train_dataset
 from lib.utils.logger import logger
-from lib.utils.quantize_utils import QConv2d, QLinear, calibrate
+from lib.utils.quantize_utils import (CommonQuantConv2d, CommonQuantLinear,
+                                      CommonQuantMultiheadAttention)
 from lib.utils.utils import AverageMeter, accuracy, measure_model
+
+config.IGNORE_MISSING_KEYS = True  # Ignore missing keys in brevitas quantization layers
+
+# Models
+default_model_names = sorted(name for name in models.__dict__
+                             if name.islower() and not name.startswith("__")
+                             and callable(models.__dict__[name]))
+
+customized_models_names = sorted(
+    name for name in customized_models.__dict__
+    if name.islower() and not name.startswith("__")
+    and callable(customized_models.__dict__[name]))
+
+for name in customized_models.__dict__:
+    if name.islower() and not name.startswith("__") and callable(
+            customized_models.__dict__[name]):
+        models.__dict__[name] = customized_models.__dict__[name]
+
+model_names = default_model_names + customized_models_names
+logger.info(f'Support models: {model_names}')
 
 
 class LinearQuantizeEnv:
 
-    def __init__(self,
-                 model,
-                 pretrained_model,
-                 data,
-                 data_root,
-                 compress_ratio,
-                 args,
-                 n_data_worker=16,
-                 batch_size=256,
-                 float_bit=8):
+    def __init__(self, args):
         # default setting
-        self.quantizable_layer_types = [QConv2d, QLinear]
+        self.quantizable_layer_types = [
+            CommonQuantConv2d, CommonQuantLinear, CommonQuantMultiheadAttention
+        ]
 
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
         # Set device
@@ -44,9 +62,7 @@ class LinearQuantizeEnv:
             "cuda" if torch.cuda.is_available() else "cpu")
 
         # save options
-        self.model = model
-        self.model_for_measure = deepcopy(model)
-        self.model_name = args.arch
+        self.arch = args.arch
         self.cur_ind = 0
         self.quantization_strategy = []  # quantization strategy
 
@@ -57,17 +73,11 @@ class LinearQuantizeEnv:
             self._load_hardware_config()
 
         self.finetune_lr = args.finetune_lr
-        self.optimizer = optim.SGD(model.parameters(),
-                                   lr=args.finetune_lr,
-                                   momentum=0.9,
-                                   weight_decay=1e-5)
         self.criterion = nn.CrossEntropyLoss().to(self.device)
-        self.pretrained_model = pretrained_model
-        self.n_data_worker = n_data_worker
-        self.batch_size = batch_size
-        self.data_type = data
-        self.data_root = data_root
-        self.compress_ratio = compress_ratio
+        self.n_data_worker = args.n_worker
+        self.batch_size = args.data_bsize
+        self.data_type = args.dataset
+        self.data_root = args.dataset_root
         self.val_size = args.val_size
         self.train_size = args.train_size
         self.finetune_gamma = args.finetune_gamma
@@ -93,7 +103,7 @@ class LinearQuantizeEnv:
         self.action_radio_button = True
 
         self.is_inception = args.arch.startswith('inception')
-        self.is_imagenet = ('imagenet' in data)
+        self.is_imagenet = ('imagenet' in self.data_type)
         self.use_top5 = args.use_top5
 
         # init reward
@@ -102,22 +112,33 @@ class LinearQuantizeEnv:
         # prepare data
         self._init_data()
 
-        # build indexs
+        # create model
+        self.create_model()
+        self.model_for_measure = deepcopy(self.model)
+        self.pretrained_model = deepcopy(self.model.state_dict())
+        total_params = sum(p.numel()
+                           for p in self.model.parameters()) / 1000000.0
+        logger.info(f'==> Total params: {total_params:.4f}M')
+        cudnn.benchmark = True
+
+        # build index
         self._build_index()
         self.n_quantizable_layer = len(self.quantizable_idx)
 
         self.model.load_state_dict(self.pretrained_model, strict=True)
         self.model = self.model.to(self.device)
-        # self.org_acc = self._validate(self.val_loader, self.model)
-        self.org_acc = self._validate(self.train_loader, self.model)
+        self._finetune(
+            self.train_loader, self.model, epochs=1,
+            verbose=False)  # Finetune for one epoch to initialize scales
+        self.org_acc = self._validate(self.val_loader, self.model)
         self.target_acc = self.org_acc - args.acc_drop
 
         # build embedding (static part), same as pruning
         self._build_state_embedding()
 
         # mode
-        self.cost_mode = 'cloud_latency'
-        self.simulator_batch = 16
+        self.cost_mode = 'crossbar'
+        self.simulator_batch = 1
         self.cost_lookuptable = self._get_lookuptable()
 
         # restore weight
@@ -126,6 +147,30 @@ class LinearQuantizeEnv:
             f'=> original acc: {self.org_acc:.4f}% on split dataset(train: {self.train_size:7d}, val: {self.val_size:7d})'
         )
         logger.info(f'=> original cost: {self._org_cost():.4f}')
+
+    def create_model(self):
+        self.model = models.__dict__[self.arch](
+            pretrained=True,
+            num_classes=self.n_class,
+            quantization_strategy=self.quantization_strategy.copy(),
+            max_bit=self.max_bit)
+
+        if torch.cuda.device_count() > 1:
+            if self.arch.startswith('alexnet') or self.arch.startswith(
+                    'vgg') or self.arch.startswith(
+                        'qalexnet') or self.arch.startswith('qvgg'):
+                self.model.features = torch.nn.DataParallel(
+                    self.model.features)
+                self.model.to(self.device)
+            else:
+                self.model = torch.nn.DataParallel(self.model).to(self.device)
+        else:
+            self.model = self.model.to(self.device)
+
+        self.optimizer = optim.SGD(self.model.parameters(),
+                                   lr=self.finetune_lr,
+                                   momentum=0.9,
+                                   weight_decay=4e-5)
 
     def adjust_learning_rate(self):
         for param_group in self.optimizer.param_groups:
@@ -153,9 +198,7 @@ class LinearQuantizeEnv:
             cost = self._cur_cost()
             cost_ratio = cost / self._org_cost()
 
-            self._set_mixed_precision(quantizable_idx=self.quantizable_idx,
-                                      strategy=self.strategy)
-            self.model = calibrate(self.model, self.train_loader)
+            self.create_model()  # create model with new strategy
             if self.finetune_flag:
                 self._finetune(self.train_loader,
                                self.model,
@@ -233,13 +276,7 @@ class LinearQuantizeEnv:
         return (acc - self.org_acc) * 0.1
 
     def reset(self):
-        # restore env by loading the pretrained model
-        self.model.load_state_dict(self.pretrained_model, strict=False)
-        self.model = self.model.to(self.device)
-        self.optimizer = optim.SGD(self.model.parameters(),
-                                   lr=self.finetune_lr,
-                                   momentum=0.9,
-                                   weight_decay=4e-5)
+        # restore env by resetting indices
         self.cur_ind = 0
         self.quantization_strategy = []  # quantization strategy
         obs = self.layer_embedding[0].copy()
@@ -322,20 +359,6 @@ class LinearQuantizeEnv:
             action = int(np.round(action, 0))
             return action
 
-    def _set_mixed_precision(self, quantizable_idx, strategy):
-        assert len(quantizable_idx) == len(strategy), \
-            'You should provide the same number of bit setting as layer list for weight quantization!'
-        quantize_layer_bit_dict = {
-            n: b
-            for n, b in zip(quantizable_idx, strategy)
-        }
-        for i, layer in enumerate(self.model.modules()):
-            if i not in quantizable_idx:
-                continue
-            else:
-                layer.w_bit = quantize_layer_bit_dict[i][0]
-                layer.a_bit = quantize_layer_bit_dict[i][1]
-
     def _cur_cost(self):
         cur_cost = 0.
         # quantized
@@ -352,7 +375,7 @@ class LinearQuantizeEnv:
         return org_cost
 
     def _init_data(self):
-        self.train_loader, self.val_loader, n_class = get_split_train_dataset(
+        self.train_loader, self.val_loader, self.n_class = get_split_train_dataset(
             self.data_type,
             self.batch_size,
             self.n_data_worker,
@@ -364,13 +387,143 @@ class LinearQuantizeEnv:
     def _build_index(self):
         self.quantizable_idx = []
         self.bound_list = []
-        for i, m in enumerate(self.model.modules()):
+        self.layer_component_map = {
+        }  # Maps quantizable_idx to (module_idx, component_idx or None)
+
+        quantizable_layer_count = 0
+
+        for module_idx, m in enumerate(self.model.modules()):
             if type(m) in self.quantizable_layer_types:
-                self.quantizable_idx.append(i)
-                self.bound_list.append((self.min_bit, self.max_bit))
+                if type(m) == CommonQuantMultiheadAttention:
+                    # MHA: Add 4 entries for internal components
+                    for component_idx in range(4):
+                        self.quantizable_idx.append(quantizable_layer_count)
+                        self.layer_component_map[quantizable_layer_count] = (
+                            module_idx, component_idx)
+                        self.bound_list.append((self.min_bit, self.max_bit))
+                        quantizable_layer_count += 1
+                else:
+                    self.quantizable_idx.append(quantizable_layer_count)
+                    self.layer_component_map[quantizable_layer_count] = (
+                        module_idx, None)
+                    self.bound_list.append((self.min_bit, self.max_bit))
+                    quantizable_layer_count += 1
+
         logger.info(f'=> Final bound list: {self.bound_list}')
         logger.info(
             f'=> Total quantizable components: {len(self.quantizable_idx)}')
+
+    def _build_regular_layer_state(self, m, ind):
+        """Build state for regular layers (Conv2d or Linear)."""
+        this_state = []
+        if type(m) in [nn.Conv2d, CommonQuantConv2d]:
+            this_state.append([
+                int(m.in_channels == m.groups)
+            ])  # layer type, 0 for normal conv, 1 for conv_dw
+            this_state.append([m.in_channels])  # in channels
+            this_state.append([m.out_channels])  # out channels
+            this_state.append([m.stride[0]])  # stride
+            this_state.append([m.kernel_size[0]])  # kernel size
+            this_state.append([np.prod(m.weight.size())])  # weight size
+            this_state.append([m.in_w * m.in_h])  # input feature_map_size
+        elif type(m) in [nn.Linear, CommonQuantLinear]:
+            this_state.append([2.])  # layer type, 2 for fc
+            this_state.append([m.in_features])  # in channels
+            this_state.append([m.out_features])  # out channels
+            this_state.append([0.])  # stride
+            this_state.append([1.])  # kernel size
+            this_state.append([np.prod(m.weight.size())])  # weight size
+            this_state.append([m.in_w * m.in_h])  # input feature_map_size
+
+        this_state.append([ind])  # index
+        this_state.append([1.])  # bits, 1 is the max bit
+        this_state.append([1.])  # action radio button, 1 is the weight action
+
+        return this_state
+
+    def _build_mha_component_state(self, m, component_idx, ind):
+        """Build state for MHA components."""
+        this_state = []
+        embed_dim = m.embed_dim
+        num_heads = m.num_heads
+        head_dim = embed_dim // num_heads
+        seq_len = getattr(m, 'seq_len', 50)  # From measurement or default
+
+        if component_idx == 0:
+            this_state.append([
+                2.
+            ])  # layer type, 2 for MHA QKV projection (as it is a FC layer)
+            this_state.append([embed_dim])  # in features (embed_dim)
+            this_state.append([embed_dim * 3
+                               ])  # out features (Q, K, V combined)
+            this_state.append([0.])  # stride (not applicable for FC)
+            this_state.append([1.])  # kernel size (not applicable for FC)
+            this_state.append([embed_dim * 3 * embed_dim
+                               ])  # weight size (Q, K, V combined)
+            this_state.append([[
+                seq_len * embed_dim
+            ]])  # input feature_map_size (seq_len * embed_dim)
+        elif component_idx == 1:
+            this_state.append(
+                [3.]
+            )  # layer type, 3 for MHA attention computation (Q @ K^T) (MatMul)
+            this_state.append([head_dim])  # feature dimension (head_dim)
+            this_state.append([seq_len])  # output dimension (seq_len)
+            this_state.append([0.])  # stride (not applicable for MatMul)
+            this_state.append([1.])  # kernel size (not applicable for MatMul)
+            this_state.append([num_heads * seq_len * head_dim
+                               ])  # Q tensor size (first operand)
+            this_state.append([[num_heads * head_dim * seq_len]
+                               ])  # K^T tensor size (second operand)
+        elif component_idx == 2:
+            this_state.append([
+                3.
+            ])  # layer type, 3 for MHA attention output (V @ O) (MatMul)
+            this_state.append([seq_len])  # feature dimension (seq_len)
+            this_state.append([head_dim])  # output dimension (head_dim)
+            this_state.append([0.])  # stride (not applicable for MatMul)
+            this_state.append([1.])  # kernel size (not applicable for MatMul)
+            this_state.append([num_heads * seq_len * seq_len
+                               ])  # attention output size (first operand)
+            this_state.append([[num_heads * seq_len * head_dim]
+                               ])  # V tensor size (second operand)
+        elif component_idx == 3:
+            this_state.append([
+                2.
+            ])  # layer type, 2 for MHA output projection (as it is a FC layer)
+            this_state.append([embed_dim])  # in channels (embed_dim)
+            this_state.append([embed_dim])  # out channels (embed_dim)
+            this_state.append([0.])  # stride (not applicable for FC)
+            this_state.append([1.])  # kernel size (not applicable for FC)
+            this_state.append([embed_dim * embed_dim])  # weight size (output)
+            this_state.append([[
+                seq_len * embed_dim
+            ]])  # input feature_map_size (seq_len * embed_dim)
+        else:
+            raise ValueError(
+                f'Invalid component_idx {component_idx} for MHA state building'
+            )
+
+        this_state.append([ind])  # index
+        this_state.append([1.])  # bits, 1 is the max bit
+        this_state.append([1.])  # action radio button, 1 is the weight action
+        return this_state
+
+    def _normalize_embeddings(self, layer_embedding):
+        """Embedding normalization"""
+        logger.info(
+            f'=> Embedding shape (n_components * n_dim): {layer_embedding.shape}'
+        )
+        assert len(layer_embedding.shape) == 2, layer_embedding.shape
+
+        # Vectorized normalization
+        fmin = layer_embedding.min(axis=0)
+        fmax = layer_embedding.max(axis=0)
+        mask = (fmax - fmin) > 0
+        layer_embedding[:, mask] = (layer_embedding[:, mask] -
+                                    fmin[mask]) / (fmax[mask] - fmin[mask])
+
+        return layer_embedding
 
     def _build_state_embedding(self):
         # measure model for input
@@ -381,54 +534,32 @@ class LinearQuantizeEnv:
         # build the static part of the state embedding
         layer_embedding = []
         module_list = list(self.model_for_measure.modules())
-        for i, ind in enumerate(self.quantizable_idx):
-            m = module_list[ind]
-            this_state = []
-            if type(m) == nn.Conv2d or type(m) == QConv2d:
-                this_state.append([int(m.in_channels == m.groups)
-                                   ])  # layer type, 1 for conv_dw
-                this_state.append([m.in_channels])  # in channels
-                this_state.append([m.out_channels])  # out channels
-                this_state.append([m.stride[0]])  # stride
-                this_state.append([m.kernel_size[0]])  # kernel size
-                this_state.append([np.prod(m.weight.size())])  # weight size
-                this_state.append([m.in_w * m.in_h])  # input feature_map_size
-            elif type(m) == nn.Linear or type(m) == QLinear:
-                this_state.append([0.])  # layer type, 0 for fc
-                this_state.append([m.in_features])  # in channels
-                this_state.append([m.out_features])  # out channels
-                this_state.append([0.])  # stride
-                this_state.append([1.])  # kernel size
-                this_state.append([np.prod(m.weight.size())])  # weight size
-                this_state.append([m.in_w * m.in_h])  # input feature_map_size
 
-            this_state.append([i])  # index
-            this_state.append([1.])  # bits, 1 is the max bit
-            this_state.append(
-                [1.])  # action radio button, 1 is the weight action
+        for ind in self.quantizable_idx:
+            module_idx, component_idx = self.layer_component_map[ind]
+            m = module_list[module_idx]
+
+            if component_idx is None:
+                # Regular layer (Conv2d or Linear)
+                this_state = self._build_regular_layer_state(m, ind)
+            else:
+                # MHA component
+                this_state = self._build_mha_component_state(
+                    m, component_idx, ind)
+
             layer_embedding.append(np.hstack(this_state))
 
-        # normalize the state
-        layer_embedding = np.array(layer_embedding, 'float')
-        logger.info('=> shape of embedding (n_layer * n_dim): {}'.format(
-            layer_embedding.shape))
-        assert len(layer_embedding.shape) == 2, layer_embedding.shape
-        for i in range(layer_embedding.shape[1]):
-            fmin = min(layer_embedding[:, i])
-            fmax = max(layer_embedding[:, i])
-            if fmax - fmin > 0:
-                layer_embedding[:, i] = (layer_embedding[:, i] -
-                                         fmin) / (fmax - fmin)
-
-        self.layer_embedding = layer_embedding
+        # Normalize embeddings
+        self.layer_embedding = self._normalize_embeddings(
+            np.array(layer_embedding, 'float'))
 
     def _get_lookuptable(self):
 
         lookup_table_folder = 'lib/simulator/lookup_tables/'
         Path(lookup_table_folder).mkdir(parents=True, exist_ok=True)
-        if self.cost_mode == 'cloud_latency':
-            fname = lookup_table_folder + self.arch + '_' + self.data_type \
-                    + '_batch' + str(self.simulator_batch) + '_latency_table.npy'
+        if self.cost_mode == 'crossbar':
+            fname = lookup_table_folder + self.arch + '_batch_' + str(
+                self.simulator_batch) + '_latency_table.npy'
         else:
             # add your own cost lookuptable here
             raise NotImplementedError

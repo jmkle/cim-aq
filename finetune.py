@@ -24,9 +24,8 @@ from tqdm import tqdm
 
 import models as customized_models
 from lib.utils.data_utils import get_dataset
+from lib.utils.export_utils import export_models
 from lib.utils.logger import logger as main_logger
-from lib.utils.quantize_utils import (QConv2d, QLinear, calibrate,
-                                      kmeans_update_model, quantize_model)
 from lib.utils.utils import AverageMeter, MetricsLogger, accuracy
 
 # Models
@@ -357,7 +356,11 @@ if __name__ == '__main__':
 
     main_logger.info(f'Quantization strategy: {quantization_strategy}')
 
-    model = models.__dict__[args.arch](pretrained=args.pretrained)
+    model = models.__dict__[args.arch](
+        pretrained=args.pretrained,
+        num_classes=n_class,
+        quantization_strategy=quantization_strategy)
+    model = model.to(device)
     main_logger.info(
         f"=> created model '{args.arch}' pretrained is {args.pretrained}")
     main_logger.info(
@@ -371,26 +374,6 @@ if __name__ == '__main__':
                           lr=args.lr,
                           momentum=args.momentum,
                           weight_decay=args.weight_decay)
-
-    quantizable_idx = []
-    for i, m in enumerate(model.modules()):
-        if type(m) in [QConv2d, QLinear]:
-            quantizable_idx.append(i)
-    # print(model)
-    main_logger.info(quantizable_idx)
-
-    quantize_layer_bit_dict = {
-        n: b
-        for n, b in zip(quantizable_idx, quantization_strategy)
-    }
-    for i, layer in enumerate(model.modules()):
-        if i not in quantizable_idx:
-            continue
-        else:
-            layer.w_bit = quantize_layer_bit_dict[i][0]
-            layer.a_bit = quantize_layer_bit_dict[i][1]
-    model = model.to(device)
-    model = calibrate(model, train_loader)
 
     if torch.cuda.device_count() > 1:
         if (args.arch.startswith('alexnet') or args.arch.startswith('vgg')
