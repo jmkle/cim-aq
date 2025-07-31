@@ -8,6 +8,7 @@ import os
 import random
 import shutil
 import time
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -330,11 +331,11 @@ def save_checkpoint(state,
                     is_best,
                     checkpoint='checkpoint',
                     filename='checkpoint.pth.tar'):
-    filepath = os.path.join(checkpoint, filename)
-    torch.save(state, filepath)
+    filepath = Path(checkpoint) / filename
+    torch.save(state, str(filepath))
     if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint,
-                                               'model_best.pth.tar'))
+        shutil.copyfile(str(filepath),
+                        str(Path(checkpoint) / 'model_best.pth.tar'))
 
 
 def adjust_learning_rate(optimizer, epoch):
@@ -360,10 +361,10 @@ if __name__ == '__main__':
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
 
     if args.resume:
-        args.checkpoint = os.path.dirname(args.resume)
+        args.checkpoint = str(Path(args.resume).parent)
 
-    if not os.path.isdir(args.checkpoint):
-        os.makedirs(args.checkpoint)
+    if not Path(args.checkpoint).is_dir():
+        Path(args.checkpoint).mkdir(parents=True, exist_ok=True)
 
     train_loader, val_loader, n_class = get_dataset(
         dataset_name=args.data_name,
@@ -444,9 +445,9 @@ if __name__ == '__main__':
     if args.resume:
         # Load checkpoint.
         main_logger.info('==> Resuming from checkpoint..')
-        assert os.path.isfile(
-            args.resume), 'Error: no checkpoint directory found!'
-        args.checkpoint = os.path.dirname(args.resume)
+        assert Path(
+            args.resume).is_file(), 'Error: no checkpoint directory found!'
+        args.checkpoint = str(Path(args.resume).parent)
         checkpoint = torch.load(args.resume, map_location=device)
         best_acc = checkpoint['best_acc']
         main_logger.info(f'Previous best accuracy: {best_acc}')
@@ -454,34 +455,32 @@ if __name__ == '__main__':
         model.load_state_dict(checkpoint['state_dict'], strict=False)
         model.to(device)
         optimizer.load_state_dict(checkpoint['optimizer'])
-        if os.path.isfile(os.path.join(args.checkpoint, 'log.txt')):
-            logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
-                                   title=title,
-                                   resume=True)
+        log_path = Path(args.checkpoint) / 'log.txt'
+        if log_path.is_file():
+            logger = MetricsLogger(str(log_path), title=title, resume=True)
         else:
-            logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
-                                   title=title)
+            logger = MetricsLogger(str(log_path), title=title)
             logger.set_names([
                 'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
                 'Valid Acc.', 'Train Acc5', 'Valid Acc5'
             ])
     else:
-        logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
-                               title=title)
+        log_path = Path(args.checkpoint) / 'log.txt'
+        logger = MetricsLogger(str(log_path), title=title)
         logger.set_names([
             'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
             'Valid Acc.', 'Train Acc5', 'Valid Acc5'
         ])
 
     # Setup tensorboard writer
-    tf_writer = SummaryWriter(log_dir=os.path.join(args.checkpoint, 'logs'))
+    tf_writer = SummaryWriter(log_dir=str(Path(args.checkpoint) / 'logs'))
 
     # Initialize W&B if enabled
     wandb_run = None
     if args.wandb_enable:
         wandb_run = wandb.init(
             project=args.wandb_project,
-            name=f"finetune_{os.path.basename(args.checkpoint)}",
+            name=f"finetune_{Path(args.checkpoint).name}",
             config=vars(args),
             tags=['finetuning', args.arch, args.data_name, 'quantized'])
 
