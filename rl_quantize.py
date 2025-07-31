@@ -67,7 +67,6 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
         'Best_Rew': f'{best_reward:.4f}',
         'Best_Acc': f'{best_accuracy:.4f}%',
         'Orig_Acc': f'{env.org_acc:.4f}%',
-        'Target': f'{env.compress_ratio:.4f}'
     })
 
     # Periodic logging intervals
@@ -76,7 +75,6 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
 
     logger.info(
         f"Starting RL-based quantization search for {num_episode} episodes")
-    logger.info(f"Target preserve ratio: {env.compress_ratio:.4f}")
     logger.info(f"Original model accuracy: {env.org_acc:.4f}%")
     if hasattr(env, 'target_acc') and env.target_acc is not None:
         logger.info(f"Target accuracy constraint: {env.target_acc:.4f}%")
@@ -249,8 +247,8 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
             tfwriter.add_scalar('reward/best', best_reward, episode)
             tfwriter.add_scalar('info/accuracy', info['accuracy'], episode)
             tfwriter.add_text('info/best_policy', str(best_policy), episode)
-            tfwriter.add_text('info/current_policy', str(env.strategy),
-                              episode)
+            tfwriter.add_text('info/current_policy',
+                              str(env.quantization_strategy), episode)
             tfwriter.add_scalar('value_loss', value_loss, episode)
             tfwriter.add_scalar('policy_loss', policy_loss, episode)
             tfwriter.add_scalar('delta', delta, episode)
@@ -258,11 +256,11 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
             tfwriter.add_scalar('info/cost_ratio', info.get('cost_ratio', 0.0),
                                 episode)
             # record the preserve rate for each layer
-            for i, preserve_rate in enumerate(env.strategy):
-                tfwriter.add_scalar('preserve_rate_w/{}'.format(i),
-                                    preserve_rate[0], episode)
-                tfwriter.add_scalar('preserve_rate_a/{}'.format(i),
-                                    preserve_rate[1], episode)
+            for i, bit_widths in enumerate(env.quantization_strategy):
+                tfwriter.add_scalar('weight_bit_widths/{}'.format(i),
+                                    bit_widths[0], episode)
+                tfwriter.add_scalar('activation_bit_widths/{}'.format(i),
+                                    bit_widths[1], episode)
 
             # ============ W&B logging ============#
             if wandb_enable:
@@ -275,13 +273,13 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
                     'delta': delta,
                     'info/cost_ratio': info.get('cost_ratio', 0.0),
                     'info/best_policy': str(best_policy),
-                    'info/current_policy': str(env.strategy)
+                    'info/current_policy': str(env.quantization_strategy)
                 }
 
                 # Add per-layer preserve rates
-                for i, preserve_rate in enumerate(env.strategy):
-                    wandb_metrics[f'preserve_rate_w/{i}'] = preserve_rate[0]
-                    wandb_metrics[f'preserve_rate_a/{i}'] = preserve_rate[1]
+                for i, bit_widths in enumerate(env.quantization_strategy):
+                    wandb_metrics[f'weight_bit_widths/{i}'] = bit_widths[0]
+                    wandb_metrics[f'activation_bit_widths/{i}'] = bit_widths[1]
 
                 wandb.log(wandb_metrics, step=episode)
 
@@ -345,10 +343,6 @@ if __name__ == "__main__":
                         default='data/imagenet',
                         type=str,
                         help='path to dataset')
-    parser.add_argument('--preserve_ratio',
-                        default=0.1,
-                        type=float,
-                        help='preserve ratio of the model size')
     parser.add_argument('--min_bit',
                         default=1,
                         type=float,
@@ -357,10 +351,25 @@ if __name__ == "__main__":
                         default=8,
                         type=float,
                         help='maximum bit to use')
-    parser.add_argument('--float_bit',
-                        default=32,
+    parser.add_argument('--orig_bit',
+                        default=8,
                         type=int,
-                        help='the bit of full precision float')
+                        help='the bit precision of the original model')
+    parser.add_argument('--acc_drop',
+                        default=1.0,
+                        type=float,
+                        help='acceptable accuracy drop (default: 1.0)')
+    parser.add_argument(
+        '--consider_cell_resolution',
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help=
+        'restrict weight bit widths to multiples of crossbar cell resolution')
+    parser.add_argument(
+        '--force_first_last_layer',
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help='force first and last layers to high precision (default: True)')
     # ddpg
     parser.add_argument('--hidden1',
                         default=300,
@@ -547,8 +556,12 @@ if __name__ == "__main__":
     logger.info(f'==> Dataset root: {args.dataset_root}')
 
     logger.info('==> Initializing quantization environment...')
-    logger.info(f'==> Preserve ratio: {args.preserve_ratio}')
     logger.info(f'==> Min bit: {args.min_bit}, Max bit: {args.max_bit}')
+    logger.info(
+        f'==> Consider cell resolution: {args.consider_cell_resolution}')
+    logger.info(
+        f'==> Force first and last layer to high precision: {args.force_first_last_layer}'
+    )
 
     env = LinearQuantizeEnv(model,
                             pretrained_model,
