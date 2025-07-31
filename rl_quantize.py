@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision.models as models
+import wandb
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -39,12 +40,7 @@ model_names = default_model_names + customized_models_names
 logger.info(f'Support models: {model_names}')
 
 
-def train(num_episode,
-          agent,
-          env,
-          output,
-          linear_quantization=False,
-          debug=False):
+def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
     # best record
     best_reward = -math.inf
     best_policy = []
@@ -259,21 +255,36 @@ def train(num_episode,
             tfwriter.add_scalar('value_loss', value_loss, episode)
             tfwriter.add_scalar('policy_loss', policy_loss, episode)
             tfwriter.add_scalar('delta', delta, episode)
-            if linear_quantization:
-                tfwriter.add_scalar('info/coat_ratio', info['cost_ratio'],
-                                    episode)
-                # record the preserve rate for each layer
+
+            tfwriter.add_scalar('info/cost_ratio', info.get('cost_ratio', 0.0),
+                                episode)
+            # record the preserve rate for each layer
+            for i, preserve_rate in enumerate(env.strategy):
+                tfwriter.add_scalar('preserve_rate_w/{}'.format(i),
+                                    preserve_rate[0], episode)
+                tfwriter.add_scalar('preserve_rate_a/{}'.format(i),
+                                    preserve_rate[1], episode)
+
+            # ============ W&B logging ============#
+            if wandb_enable:
+                wandb_metrics = {
+                    'reward/last': final_reward,
+                    'reward/best': best_reward,
+                    'info/accuracy': info['accuracy'],
+                    'value_loss': value_loss,
+                    'policy_loss': policy_loss,
+                    'delta': delta,
+                    'info/cost_ratio': info.get('cost_ratio', 0.0),
+                    'info/best_policy': str(best_policy),
+                    'info/current_policy': str(env.strategy)
+                }
+
+                # Add per-layer preserve rates
                 for i, preserve_rate in enumerate(env.strategy):
-                    tfwriter.add_scalar('preserve_rate_w/{}'.format(i),
-                                        preserve_rate[0], episode)
-                    tfwriter.add_scalar('preserve_rate_a/{}'.format(i),
-                                        preserve_rate[1], episode)
-            else:
-                tfwriter.add_scalar('info/w_ratio', info['w_ratio'], episode)
-                # record the preserve rate for each layer
-                for i, preserve_rate in enumerate(env.strategy):
-                    tfwriter.add_scalar('preserve_rate_w/{}'.format(i),
-                                        preserve_rate, episode)
+                    wandb_metrics[f'preserve_rate_w/{i}'] = preserve_rate[0]
+                    wandb_metrics[f'preserve_rate_a/{i}'] = preserve_rate[1]
+
+                wandb.log(wandb_metrics, step=episode)
 
             text_writer.write('best reward: {}\n'.format(best_reward))
             text_writer.write('best policy: {}\n'.format(best_policy))
@@ -468,6 +479,15 @@ if __name__ == "__main__":
                         type=str,
                         help='id(s) for CUDA_VISIBLE_DEVICES')
 
+    # W&B options
+    parser.add_argument('--wandb_enable',
+                        action='store_true',
+                        help='enable Weights & Biases logging')
+    parser.add_argument('--wandb_project',
+                        default='haq-quantization',
+                        type=str,
+                        help='W&B project name')
+
     args = parser.parse_args()
     base_folder_name = '{}_{}'.format(args.arch, args.dataset)
     if args.suffix is not None:
@@ -475,6 +495,15 @@ if __name__ == "__main__":
     args.output = os.path.join(args.output, base_folder_name)
     tfwriter = SummaryWriter(log_dir=args.output)
     text_writer = open(os.path.join(args.output, 'log.txt'), 'w')
+
+    # Initialize W&B if enabled
+    if args.wandb_enable:
+        wandb_run = wandb.init(
+            project=args.wandb_project,
+            name=f"rl_quantize_{base_folder_name}",
+            config=vars(args),
+            tags=['rl_quantization', args.arch, args.dataset])
+
     logger.info('==> Output path: {}...'.format(args.output))
 
     # Use CUDA if available, otherwise use CPU
@@ -552,12 +581,11 @@ if __name__ == "__main__":
     agent = DDPG(nb_states, nb_actions, args)
     agent.to(device)
 
-    best_policy, best_reward = train(
-        args.train_episode,
-        agent,
-        env,
-        args.output,
-        linear_quantization=args.linear_quantization,
-        debug=args.debug)
+    best_policy, best_reward = train(args.train_episode,
+                                     agent,
+                                     env,
+                                     args.output,
+                                     debug=args.debug,
+                                     wandb_enable=args.wandb_enable)
     logger.info(f'best_reward: {best_reward}')
     logger.info(f'best_policy: {best_policy}')

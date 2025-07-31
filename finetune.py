@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
+import wandb
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
@@ -161,6 +162,15 @@ parser.add_argument('--gpu_id',
                     default='1',
                     type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
+
+# W&B options
+parser.add_argument('--wandb_enable',
+                    action='store_true',
+                    help='enable Weights & Biases logging')
+parser.add_argument('--wandb_project',
+                    default='haq-quantization',
+                    type=str,
+                    help='W&B project name')
 
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
@@ -474,6 +484,15 @@ if __name__ == '__main__':
     # Setup tensorboard writer
     tf_writer = SummaryWriter(log_dir=os.path.join(args.checkpoint, 'logs'))
 
+    # Initialize W&B if enabled
+    wandb_run = None
+    if args.wandb_enable:
+        wandb_run = wandb.init(
+            project=args.wandb_project,
+            name=f"finetune_{os.path.basename(args.checkpoint)}",
+            config=vars(args),
+            tags=['finetuning', args.arch, args.data_name, 'quantized'])
+
     if args.evaluate:
         main_logger.info('\nEvaluation only')
         test_loss, test_acc, test_acc5 = test(val_loader, model, criterion,
@@ -542,6 +561,10 @@ if __name__ == '__main__':
 
         for tag, value in info.items():
             tf_writer.add_scalar(tag, value, epoch)
+
+        # ============ W&B logging ============#
+        if args.wandb_enable and wandb_run is not None:
+            wandb_run.log(info, step=epoch)
 
     logger.close()
 
