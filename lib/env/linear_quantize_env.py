@@ -12,6 +12,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from progress.bar import Bar
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
 
 from lib.utils.data_utils import get_split_train_dataset
 from lib.utils.quantize_utils import QConv2d, QLinear, calibrate
@@ -65,6 +67,12 @@ class LinearQuantizeEnv:
         self.finetune_lr = args.finetune_lr
         self.finetune_flag = args.finetune_flag
         self.finetune_epoch = args.finetune_epoch
+        self.amp = args.amp
+
+        # Initialize AMP scaler if enabled
+        self.scaler = None
+        if self.amp:
+            self.scaler = GradScaler()
 
         # options from args
         self.min_bit = args.min_bit
@@ -401,22 +409,30 @@ class LinearQuantizeEnv:
                 # measure data loading time
                 data_time.update(time.time() - end)
 
+                self.optimizer.zero_grad()
+
                 # compute output
-                output = model(input_var)
-                loss = self.criterion(output, target_var)
+                with autocast(device_type=self.device.type, enabled=self.amp):
+                    output = model(input_var)
+                    loss = self.criterion(output, target_var)
 
                 # measure accuracy and record loss
-                prec1, prec5 = accuracy(output, target_var, topk=(1, 5))
+                prec1, prec5 = accuracy(output.detach(),
+                                        target_var,
+                                        topk=(1, 5))
                 losses.update(loss.item(), inputs.size(0))
                 top1.update(prec1.item(), inputs.size(0))
                 top5.update(prec5.item(), inputs.size(0))
 
                 # compute gradient
-                self.optimizer.zero_grad()
-                loss.backward()
-
-                # do SGD step
-                self.optimizer.step()
+                if self.amp and self.scaler:
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    # do SGD step
+                    self.optimizer.step()
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)

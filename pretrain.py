@@ -16,6 +16,8 @@ import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
 from progress.bar import Bar
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
 
 import models as customized_models
@@ -126,7 +128,7 @@ parser.add_argument('--pretrained',
                     action='store_true',
                     help='use pretrained model')
 # Quantization
-parser.add_argument('--half', action='store_true', help='half')
+parser.add_argument('--amp', action='store_true', help='use amp')
 parser.add_argument('--half_type',
                     default='O1',
                     type=str,
@@ -193,6 +195,12 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
     top5 = AverageMeter()
     end = time.time()
 
+    # Get scaler for AMP
+    if args.amp:
+        scaler = GradScaler()
+    else:
+        scaler = None
+
     bar = Bar('Processing', max=len(train_loader))
     for batch_idx, (inputs, targets) in enumerate(train_loader):
         # measure data loading time
@@ -201,26 +209,31 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
         inputs, targets = inputs.to(device), targets.to(device)
 
         # compute output
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        optimizer.zero_grad()
+        if args.amp:
+            with autocast(device_type=device.type):
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+
+            # Scales loss and calls backward() to create scaled gradients
+            scaler.scale(loss).backward()
+
+            # Unscales gradients and calls optimizer.step()
+            scaler.step(optimizer)
+
+            # Updates the scale for next iteration
+            scaler.update()
+        else:
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            loss.backward()
+            optimizer.step()
 
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.detach(), targets, topk=(1, 5))
         losses.update(loss.item(), inputs.size(0))
         top1.update(prec1.item(), inputs.size(0))
         top5.update(prec5.item(), inputs.size(0))
-
-        # compute gradient
-        optimizer.zero_grad()
-        if args.half:
-            with apex.amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
-            # with amp_handle.scale_loss(loss, optimizer) as scaled_loss:
-            #     scaled_loss.backward()
-        else:
-            loss.backward()
-        # do SGD step
-        optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -357,18 +370,6 @@ if __name__ == '__main__':
                           lr=args.lr,
                           momentum=args.momentum,
                           weight_decay=args.weight_decay)
-
-    # use HalfTensor
-    if args.half:
-        try:
-            import apex
-        except ImportError:
-            raise ImportError(
-                "Please install apex from https://github.com/NVIDIA/apex")
-        model.to(device)
-        model, optimizer = apex.amp.initialize(model,
-                                               optimizer,
-                                               opt_level=args.half_type)
 
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
         model.features = torch.nn.DataParallel(model.features)
