@@ -89,9 +89,9 @@ def setup_formatters(proj_dir):
 def get_gitignore_patterns(directory):
     """Read and parse gitignore patterns from .gitignore file."""
     patterns = []
-    gitignore_path = os.path.join(directory, '.gitignore')
+    gitignore_path = Path(directory) / '.gitignore'
 
-    if os.path.exists(gitignore_path):
+    if gitignore_path.exists():
         with open(gitignore_path, 'r') as f:
             for line in f:
                 line = line.strip()
@@ -136,7 +136,7 @@ def is_path_excluded(path, base_dir, exclusion_patterns):
         return False
 
     # Get relative path for matching
-    rel_path = os.path.relpath(path, base_dir)
+    rel_path = str(Path(path).relative_to(base_dir))
 
     # Check against all patterns
     for pattern in exclusion_patterns:
@@ -157,19 +157,20 @@ def discover_files_in_dir(directory, exclusion_patterns, formatters, base_dir):
     for root, dirs, filenames in os.walk(directory):
         # Skip excluded directories - modify dirs in-place to prevent traversal
         dirs[:] = [
-            d for d in dirs if not is_path_excluded(os.path.join(
-                root, d), base_dir, exclusion_patterns)
+            d for d in dirs
+            if not is_path_excluded(str(Path(root) /
+                                        d), base_dir, exclusion_patterns)
         ]
 
         for filename in filenames:
-            filepath = os.path.join(root, filename)
+            filepath = str(Path(root) / filename)
 
             # Skip excluded files
             if is_path_excluded(filepath, base_dir, exclusion_patterns):
                 continue
 
             # Track files by extension
-            ext = os.path.splitext(filename)[1]
+            ext = Path(filename).suffix
             path_obj = Path(filepath)
 
             if ext in formatters:
@@ -344,7 +345,7 @@ def process_file(file_info):
                 ["diff", "-u", str(f), tmp_path],
                 capture_output=True,
                 text=True)
-            os.remove(tmp_path)
+            Path(tmp_path).unlink()
             if diff.returncode != 0:
                 msg = "Imports/formatting would change under isort→yapf"
                 if args.show_errors:

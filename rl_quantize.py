@@ -6,6 +6,7 @@ import argparse
 import math
 import os
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -198,7 +199,7 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
                 logger.info(f"    Strategy: {best_policy}")
 
                 # Save best policy immediately
-                np.save(os.path.join(output, 'best_policy.npy'), best_policy)
+                np.save(str(Path(output) / 'best_policy.npy'), best_policy)
 
             # agent observe and update policy
             for i, (r_t, s_t, s_t1, a_t, done) in enumerate(T):
@@ -320,7 +321,7 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
         'accuracy_history': accuracy_history,
         'cost_history': cost_history
     }
-    with open(os.path.join(output, 'training_stats.pkl'), 'wb') as f:
+    with open(str(Path(output) / 'training_stats.pkl'), 'wb') as f:
         pickle.dump(stats, f)
     logger.info(f"Training statistics saved to {output}/training_stats.pkl")
 
@@ -416,8 +417,8 @@ if __name__ == "__main__":
     # training
     parser.add_argument('--max_episode_length', default=1e9, type=int, help='')
     parser.add_argument('--output',
-                        default=os.path.abspath(
-                            os.path.join(os.path.dirname(__file__), 'save')),
+                        default=str((Path(__file__).resolve().parent /
+                                     'save').absolute()),
                         type=str,
                         help='')
     parser.add_argument('--debug', dest='debug', action='store_true')
@@ -496,13 +497,13 @@ if __name__ == "__main__":
     base_folder_name = '{}_{}'.format(args.arch, args.dataset)
     if args.suffix is not None:
         base_folder_name = base_folder_name + '_' + args.suffix
-    args.output = os.path.join(args.output, base_folder_name)
+    args.output = str(Path(args.output) / base_folder_name)
 
     # Create output directory if it doesn't exist
-    os.makedirs(args.output, exist_ok=True)
+    Path(args.output).mkdir(parents=True, exist_ok=True)
 
     tfwriter = SummaryWriter(log_dir=args.output)
-    text_writer = open(os.path.join(args.output, 'log.txt'), 'w')
+    text_writer = open(str(Path(args.output) / 'log.txt'), 'w')
 
     # Initialize W&B if enabled
     if args.wandb_enable:
@@ -599,4 +600,4 @@ if __name__ == "__main__":
     logger.info(f'best_policy: {best_policy}')
 
     # save the best policy
-    np.save(os.path.join(args.output, 'best_policy.npy'), best_policy)
+    np.save(str(Path(args.output) / 'best_policy.npy'), best_policy)

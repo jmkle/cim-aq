@@ -6,6 +6,7 @@ import math
 import os
 import time
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -382,15 +383,15 @@ class LinearQuantizeEnv:
     def _get_lookuptable(self):
 
         lookup_table_folder = 'lib/simulator/lookup_tables/'
-        os.makedirs(lookup_table_folder, exist_ok=True)
+        Path(lookup_table_folder).mkdir(parents=True, exist_ok=True)
         if self.cost_mode == 'cloud_latency':
-            fname = lookup_table_folder + self.model_name + '_' + self.data_type \
+            fname = lookup_table_folder + self.arch + '_' + self.data_type \
                     + '_batch' + str(self.simulator_batch) + '_latency_table.npy'
         else:
             # add your own cost lookuptable here
             raise NotImplementedError
 
-        if os.path.isfile(fname):
+        if Path(fname).is_file():
             logger.info(f'load latency table : {fname}')
             latency_list = np.load(fname)
             logger.debug(f'Latency table contents: {latency_list}')
