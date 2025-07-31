@@ -14,6 +14,7 @@ import torch.optim as optim
 from progress.bar import Bar
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
+from tqdm import tqdm
 
 from lib.utils.data_utils import get_split_train_dataset
 from lib.utils.logger import logger
@@ -410,9 +411,10 @@ class LinearQuantizeEnv:
         model.train()
         end = time.time()
         t1 = time.time()
-        bar = Bar('train:', max=len(train_loader))
+
         for epoch in range(epochs):
-            for i, (inputs, targets) in enumerate(train_loader):
+            pbar = tqdm(train_loader, desc=f'Train Epoch {epoch+1}/{epochs}')
+            for inputs, targets in pbar:
                 input_var, target_var = inputs.to(self.device), targets.to(
                     self.device)
 
@@ -448,23 +450,14 @@ class LinearQuantizeEnv:
                 batch_time.update(time.time() - end)
                 end = time.time()
 
-                # plot progress
-                if i % 1 == 0:
-                    bar.suffix = \
-                        '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
-                        'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                            batch=i + 1,
-                            size=len(train_loader),
-                            data=data_time.val,
-                            bt=batch_time.val,
-                            total=bar.elapsed_td,
-                            eta=bar.eta_td,
-                            loss=losses.avg,
-                            top1=top1.avg,
-                            top5=top5.avg,
-                        )
-                    bar.next()
-            bar.finish()
+                # update progress bar
+                pbar.set_postfix({
+                    'Loss': f'{losses.avg:.4f}',
+                    'Top1': f'{top1.avg:.4f}',
+                    'Top5': f'{top5.avg:.4f}',
+                    'Data': f'{data_time.val:.4f}s',
+                    'Batch': f'{batch_time.val:.4f}s'
+                })
 
             if self.use_top5:
                 if top5.avg > best_acc:
@@ -493,8 +486,8 @@ class LinearQuantizeEnv:
             model.eval()
 
             end = time.time()
-            bar = Bar('valid:', max=len(val_loader))
-            for i, (inputs, targets) in enumerate(val_loader):
+            pbar = tqdm(val_loader, desc='Validation')
+            for inputs, targets in pbar:
                 # measure data loading time
                 data_time.update(time.time() - end)
 
@@ -514,23 +507,16 @@ class LinearQuantizeEnv:
                 # measure elapsed time
                 batch_time.update(time.time() - end)
                 end = time.time()
-                # plot progress
-                if i % 1 == 0:
-                    bar.suffix = \
-                        '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
-                        'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                            batch=i + 1,
-                            size=len(val_loader),
-                            data=data_time.avg,
-                            bt=batch_time.avg,
-                            total=bar.elapsed_td,
-                            eta=bar.eta_td,
-                            loss=losses.avg,
-                            top1=top1.avg,
-                            top5=top5.avg,
-                        )
-                    bar.next()
-            bar.finish()
+
+                # update progress bar
+                pbar.set_postfix({
+                    'Loss': f'{losses.avg:.4f}',
+                    'Top1': f'{top1.avg:.4f}',
+                    'Top5': f'{top5.avg:.4f}',
+                    'Data': f'{data_time.avg:.4f}s',
+                    'Batch': f'{batch_time.avg:.4f}s'
+                })
+
         t2 = time.time()
         if verbose:
             logger.info(

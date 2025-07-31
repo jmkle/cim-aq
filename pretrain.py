@@ -19,6 +19,7 @@ from progress.bar import Bar
 from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 import models as customized_models
 from lib.utils.data_utils import get_dataset
@@ -202,8 +203,8 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
     else:
         scaler = None
 
-    bar = Bar('Processing', max=len(train_loader))
-    for batch_idx, (inputs, targets) in enumerate(train_loader):
+    pbar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}')
+    for inputs, targets in pbar:
         # measure data loading time
         data_time.update(time.time() - end)
 
@@ -240,24 +241,16 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        # plot progress
-        if batch_idx % 1 == 0:
-            bar.suffix = \
-                '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
-                'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                    batch=batch_idx + 1,
-                    size=len(train_loader),
-                    data=data_time.val,
-                    bt=batch_time.val,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg,
-                )
-            bar.next()
-    bar.finish()
-    return losses.avg, top1.avg
+        # Update progress bar
+        pbar.set_postfix({
+            'Loss': f'{losses.avg:.4f}',
+            'Top1': f'{top1.avg:.4f}',
+            'Top5': f'{top5.avg:.4f}',
+            'Data': f'{data_time.val:.4f}s',
+            'Batch': f'{batch_time.val:.4f}s'
+        })
+
+    return losses.avg, top1.avg, top5.avg
 
 
 def test(val_loader, model, criterion, epoch, device):
@@ -274,8 +267,8 @@ def test(val_loader, model, criterion, epoch, device):
         model.eval()
 
         end = time.time()
-        bar = Bar('Processing', max=len(val_loader))
-        for batch_idx, (inputs, targets) in enumerate(val_loader):
+        pbar = tqdm(val_loader, desc=f'Testing Epoch {epoch+1}')
+        for inputs, targets in pbar:
             # measure data loading time
             data_time.update(time.time() - end)
 
@@ -295,24 +288,16 @@ def test(val_loader, model, criterion, epoch, device):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            # plot progress
-            if batch_idx % 1 == 0:
-                bar.suffix  = \
-                    '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
-                    'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                        batch=batch_idx + 1,
-                        size=len(val_loader),
-                        data=data_time.avg,
-                        bt=batch_time.avg,
-                        total=bar.elapsed_td,
-                        eta=bar.eta_td,
-                        loss=losses.avg,
-                        top1=top1.avg,
-                        top5=top5.avg,
-                        )
-                bar.next()
-        bar.finish()
-    return losses.avg, top1.avg
+            # Update progress bar
+            pbar.set_postfix({
+                'Loss': f'{losses.avg:.4f}',
+                'Top1': f'{top1.avg:.4f}',
+                'Top5': f'{top5.avg:.4f}',
+                'Data': f'{data_time.avg:.4f}s',
+                'Batch': f'{batch_time.avg:.4f}s'
+            })
+
+    return losses.avg, top1.avg, top5.avg
 
 
 def save_checkpoint(state,
@@ -410,7 +395,7 @@ if __name__ == '__main__':
                                title=title)
         logger.set_names([
             'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
-            'Valid Acc.'
+            'Valid Acc.', 'Train Acc5', 'Valid Acc5'
         ])
 
     # Setup tensorboard writer
@@ -419,10 +404,11 @@ if __name__ == '__main__':
 
     if args.evaluate:
         main_logger.info('\nEvaluation only')
-        test_loss, test_acc = test(val_loader, model, criterion, start_epoch,
-                                   device)
+        test_loss, test_acc, test_acc5 = test(val_loader, model, criterion,
+                                              start_epoch, device)
         main_logger.info(
-            f' Test Loss:  {test_loss:.8f}, Test Acc:  {test_acc:.4f}')
+            f' Test Loss:  {test_loss:.8f}, Test Acc:  {test_acc:.4f}, Test Acc5: {test_acc5:.4f}'
+        )
         exit()
 
     # Train and val
@@ -431,12 +417,17 @@ if __name__ == '__main__':
         main_logger.info(
             f'\nEpoch: [{epoch + 1} | {args.epochs}] LR: {lr_current:f}')
 
-        train_loss, train_acc = train(train_loader, model, criterion,
-                                      optimizer, epoch, device)
-        test_loss, test_acc = test(val_loader, model, criterion, epoch, device)
+        train_loss, train_acc, train_acc5 = train(train_loader, model,
+                                                  criterion, optimizer, epoch,
+                                                  device)
+        test_loss, test_acc, test_acc5 = test(val_loader, model, criterion,
+                                              epoch, device)
 
         # append logger file
-        logger.append([lr_current, train_loss, test_loss, train_acc, test_acc])
+        logger.append([
+            lr_current, train_loss, test_loss, train_acc, test_acc, train_acc5,
+            test_acc5
+        ])
 
         # save model
         is_best = test_acc > best_acc
