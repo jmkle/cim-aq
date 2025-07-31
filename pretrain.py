@@ -22,10 +22,11 @@ from torch.utils.tensorboard import SummaryWriter
 
 import models as customized_models
 from lib.utils.data_utils import get_dataset
+from lib.utils.logger import logger as main_logger
 from lib.utils.quantize_utils import (QConv2d, QLinear, calibrate, dorefa,
                                       kmeans_update_model, quantize_model,
                                       set_fix_weight)
-from lib.utils.utils import AverageMeter, Logger, accuracy
+from lib.utils.utils import AverageMeter, MetricsLogger, accuracy
 
 # Models
 default_model_names = sorted(name for name in models.__dict__
@@ -358,10 +359,11 @@ if __name__ == '__main__':
 
     model = models.__dict__[args.arch](pretrained=args.pretrained,
                                        num_classes=n_class)
-    print("=> creating model '{}'".format(args.arch), ' pretrained is ',
-          args.pretrained)
-    print('    Total params: %.2fM' %
-          (sum(p.numel() for p in model.parameters()) / 1000000.0))
+    main_logger.info(
+        f"=> creating model '{args.arch}' pretrained is {args.pretrained}")
+    main_logger.info(
+        f'    Total params: {sum(p.numel() for p in model.parameters()) / 1000000.0:.4f}M'
+    )
     cudnn.benchmark = True
 
     # define loss function (criterion) and optimizer
@@ -381,30 +383,31 @@ if __name__ == '__main__':
     title = 'ImageNet-' + args.arch
     if args.resume:
         # Load checkpoint.
-        print('==> Resuming from checkpoint..')
+        main_logger.info('==> Resuming from checkpoint..')
         assert os.path.isfile(
             args.resume), 'Error: no checkpoint directory found!'
         args.checkpoint = os.path.dirname(args.resume)
         checkpoint = torch.load(args.resume, map_location=device)
         best_acc = checkpoint['best_acc']
-        print(best_acc)
+        main_logger.info(f'Previous best accuracy: {best_acc}')
         start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['state_dict'], strict=False)
         model = model.to(device)
         optimizer.load_state_dict(checkpoint['optimizer'])
         if os.path.isfile(os.path.join(args.checkpoint, 'log.txt')):
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
-                            title=title,
-                            resume=True)
+            logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
+                                   title=title,
+                                   resume=True)
         else:
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
-                            title=title)
+            logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
+                                   title=title)
             logger.set_names([
                 'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
                 'Valid Acc.'
             ])
     else:
-        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+        logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
+                               title=title)
         logger.set_names([
             'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
             'Valid Acc.'
@@ -412,20 +415,21 @@ if __name__ == '__main__':
 
     # Setup tensorboard writer
     tf_writer = SummaryWriter(log_dir=os.path.join(args.checkpoint, 'logs'))
-    print('save the checkpoint to ', args.checkpoint)
+    main_logger.info(f'save the checkpoint to {args.checkpoint}')
 
     if args.evaluate:
-        print('\nEvaluation only')
+        main_logger.info('\nEvaluation only')
         test_loss, test_acc = test(val_loader, model, criterion, start_epoch,
                                    device)
-        print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
+        main_logger.info(
+            f' Test Loss:  {test_loss:.8f}, Test Acc:  {test_acc:.4f}')
         exit()
 
     # Train and val
     for epoch in range(start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
-        print('\nEpoch: [%d | %d] LR: %f' %
-              (epoch + 1, args.epochs, lr_current))
+        main_logger.info(
+            f'\nEpoch: [{epoch + 1} | {args.epochs}] LR: {lr_current:f}')
 
         train_loss, train_acc = train(train_loader, model, criterion,
                                       optimizer, epoch, device)
@@ -463,5 +467,4 @@ if __name__ == '__main__':
 
     logger.close()
 
-    print('Best acc:')
-    print(best_acc)
+    main_logger.info(f'Best accuracy: {best_acc}')

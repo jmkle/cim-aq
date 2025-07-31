@@ -17,6 +17,7 @@ import models as customized_models
 from lib.env.linear_quantize_env import LinearQuantizeEnv
 from lib.env.quantize_env import QuantizeEnv
 from lib.rl.ddpg import DDPG
+from lib.utils.logger import logger
 
 # Models
 default_model_names = sorted(name for name in models.__dict__
@@ -34,7 +35,7 @@ for name in customized_models.__dict__:
         models.__dict__[name] = customized_models.__dict__[name]
 
 model_names = default_model_names + customized_models_names
-print('support models: ', model_names)
+logger.info(f'Support models: {model_names}')
 
 
 def train(num_episode,
@@ -77,6 +78,7 @@ def train(num_episode,
         # [optional] save intermideate model
         if episode % int(num_episode / 10) == 0:
             agent.save_model(output)
+            logger.info(f"Checkpoint saved at episode {episode}")
 
         # update
         step += 1
@@ -88,7 +90,7 @@ def train(num_episode,
 
             if linear_quantization:
                 if debug:
-                    print(
+                    logger.info(
                         '#{}: episode_reward:{:.4f} acc: {:.4f}, cost: {:.4f}'.
                         format(episode, episode_reward, info['accuracy'],
                                info['cost'] * 1. / 8e6))
@@ -98,7 +100,7 @@ def train(num_episode,
                            info['cost'] * 1. / 8e6))
             else:
                 if debug:
-                    print(
+                    logger.info(
                         '#{}: episode_reward:{:.4f} acc: {:.4f}, weight: {:.4f} MB'
                         .format(episode, episode_reward, info['accuracy'],
                                 info['w_ratio'] * 1. / 8e6))
@@ -322,15 +324,16 @@ if __name__ == "__main__":
     args.output = os.path.join(args.output, base_folder_name)
     tfwriter = SummaryWriter(log_dir=args.output)
     text_writer = open(os.path.join(args.output, 'log.txt'), 'w')
-    print('==> Output path: {}...'.format(args.output))
+    logger.info('==> Output path: {}...'.format(args.output))
 
     # Use CUDA if available, otherwise use CPU
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f'==> Using device: {device}')
-    print(f'==> GPU IDs: {args.gpu_id}')
+    logger.info(f'==> Using device: {device}')
+    logger.info(f'==> GPU IDs: {args.gpu_id}')
 
     if args.seed > 0:
+        logger.info(f'==> Setting random seed: {args.seed}')
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
         if device.type == 'cuda':
@@ -350,8 +353,8 @@ if __name__ == "__main__":
     else:
         model = torch.nn.DataParallel(model).to(device)
     pretrained_model = deepcopy(model.state_dict())
-    print('    Total params: %.2fM' %
-          (sum(p.numel() for p in model.parameters()) / 1000000.0))
+    logger.info('    Total params: %.2fM' %
+                (sum(p.numel() for p in model.parameters()) / 1000000.0))
     cudnn.benchmark = True
 
     if args.linear_quantization:
@@ -380,7 +383,13 @@ if __name__ == "__main__":
     nb_states = env.layer_embedding.shape[1]
     nb_actions = 1  # actions for weight and activation quantization
     args.rmsize = args.rmsize * len(env.quantizable_idx)  # for each layer
-    print('** Actual replay buffer size: {}'.format(args.rmsize))
+
+    logger.info(
+        f'==> Number of quantizable layers: {len(env.quantizable_idx)}')
+    logger.info(f'==> State embedding shape: {env.layer_embedding.shape}')
+    logger.info(f'==> Actual replay buffer size: {args.rmsize}')
+
+    logger.info('==> Initializing DDPG agent...')
     agent = DDPG(nb_states, nb_actions, args)
     agent.to(device)
 
@@ -391,5 +400,5 @@ if __name__ == "__main__":
         args.output,
         linear_quantization=args.linear_quantization,
         debug=args.debug)
-    print('best_reward: ', best_reward)
-    print('best_policy: ', best_policy)
+    logger.info(f'best_reward: {best_reward}')
+    logger.info(f'best_policy: {best_policy}')

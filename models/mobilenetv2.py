@@ -4,6 +4,7 @@ import os
 import torch
 import torch.nn as nn
 
+from lib.utils.logger import logger
 from lib.utils.quantize_utils import QConv2d, QLinear
 
 __all__ = ['MobileNetV2', 'mobilenetv2', 'qmobilenetv2']
@@ -209,7 +210,7 @@ def mobilenetv2(pretrained=False, **kwargs):
     if pretrained:
         # Load pretrained model.
         path = 'pretrained/imagenet/mobilenetv2-150.pth.tar'
-        print('==> load pretrained mobilenetv2 model..')
+        logger.info('==> load pretrained mobilenetv2 model..')
         assert os.path.isfile(path), 'Error: no checkpoint directory found!'
         ch = torch.load(path)
         ch = {n.replace('module.', ''): v for n, v in ch['state_dict'].items()}
@@ -223,7 +224,7 @@ def qmobilenetv2(pretrained=False, num_classes=1000, **kwargs):
     if pretrained:
         # Load pretrained model.
         path = 'pretrained/imagenet/mobilenetv2-150.pth.tar'
-        print('==> load pretrained mobilenetv2 model..')
+        logger.info('==> load pretrained mobilenetv2 model..')
         assert os.path.isfile(path), 'Error: no checkpoint directory found!'
         ch = torch.load(path)
         ch = {n.replace('module.', ''): v for n, v in ch['state_dict'].items()}

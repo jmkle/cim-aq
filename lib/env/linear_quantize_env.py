@@ -16,8 +16,9 @@ from torch.amp.autocast_mode import autocast
 from torch.amp.grad_scaler import GradScaler
 
 from lib.utils.data_utils import get_split_train_dataset
+from lib.utils.logger import logger
 from lib.utils.quantize_utils import QConv2d, QLinear, calibrate
-from lib.utils.utils import AverageMeter, accuracy, measure_model, prGreen
+from lib.utils.utils import AverageMeter, accuracy, measure_model
 
 
 class LinearQuantizeEnv:
@@ -114,10 +115,10 @@ class LinearQuantizeEnv:
 
         # restore weight
         self.reset()
-        print(
-            '=> original acc: {:.3f}% on split dataset(train: %7d, val: %7d )'.
-            format(self.org_acc, self.train_size, self.val_size))
-        print('=> original cost: {:.4f}'.format(self._org_cost()))
+        logger.info(
+            f'=> original acc: {self.org_acc:.4f}% on split dataset(train: {self.train_size:7d}, val: {self.val_size:7d})'
+        )
+        logger.info(f'=> original cost: {self._org_cost():.4f}')
 
     def adjust_learning_rate(self):
         for param_group in self.optimizer.param_groups:
@@ -166,9 +167,13 @@ class LinearQuantizeEnv:
 
             if reward > self.best_reward:
                 self.best_reward = reward
-                prGreen(
-                    'New best policy: {}, reward: {:.3f}, acc: {:.3f}, cost_ratio: {:.3f}'
-                    .format(self.strategy, self.best_reward, acc, cost_ratio))
+                logger.info(
+                    f'New best policy: {self.quantization_strategy}, reward: {self.best_reward:.4f}, acc: {acc:.4f}, cost_ratio: {cost_ratio:.4f}'
+                )
+            else:
+                logger.warning(
+                    f'No better policy found: {self.quantization_strategy}, reward: {reward:.4f}, acc: {acc:.4f}, cost_ratio: {cost_ratio:.4f}'
+                )
 
             obs = self.layer_embedding[
                 self.cur_ind, :].copy()  # actually the same as the last state
@@ -224,8 +229,9 @@ class LinearQuantizeEnv:
             min_cost += self.cost_lookuptable[i][int(self.min_bit -
                                                      1)][int(self.min_bit - 1)]
 
-        print('before action_wall: ', self.strategy, min_cost,
-              self._cur_cost())
+        logger.debug(
+            f'before action_wall: {self.strategy}, min_cost: {min_cost}, current_cost: {self._cur_cost()}'
+        )
         while min_cost < self._cur_cost() and target < self._cur_cost():
             # print('current: ', self.strategy, min_cost, self._cur_cost())
             for i, n_bit in enumerate(reversed(self.strategy)):
@@ -239,7 +245,9 @@ class LinearQuantizeEnv:
                 self._keep_first_last_layer()
                 if target >= self._cur_cost():
                     break
-        print('after action_wall: ', self.strategy, min_cost, self._cur_cost())
+        logger.debug(
+            f'after action_wall: {self.strategy}, min_cost: {min_cost}, current_cost: {self._cur_cost()}'
+        )
 
     def _keep_first_last_layer(self):
         self.strategy[0][0] = 8
@@ -316,7 +324,9 @@ class LinearQuantizeEnv:
             if type(m) in self.quantizable_layer_types:
                 self.quantizable_idx.append(i)
                 self.bound_list.append((self.min_bit, self.max_bit))
-        print('=> Final bound list: {}'.format(self.bound_list))
+        logger.info(f'=> Final bound list: {self.bound_list}')
+        logger.info(
+            f'=> Total quantizable components: {len(self.quantizable_idx)}')
 
     def _build_state_embedding(self):
         # measure model for cifar 32x32 input
@@ -356,7 +366,7 @@ class LinearQuantizeEnv:
 
         # normalize the state
         layer_embedding = np.array(layer_embedding, 'float')
-        print('=> shape of embedding (n_layer * n_dim): {}'.format(
+        logger.info('=> shape of embedding (n_layer * n_dim): {}'.format(
             layer_embedding.shape))
         assert len(layer_embedding.shape) == 2, layer_embedding.shape
         for i in range(layer_embedding.shape[1]):
@@ -380,9 +390,9 @@ class LinearQuantizeEnv:
             raise NotImplementedError
 
         if os.path.isfile(fname):
-            print('load latency table : ', fname)
+            logger.info(f'load latency table : {fname}')
             latency_list = np.load(fname)
-            print(latency_list)
+            logger.debug(f'Latency table contents: {latency_list}')
         else:
             # you can put your own simulator/lookuptable here
             raise NotImplementedError
@@ -465,8 +475,9 @@ class LinearQuantizeEnv:
             self.adjust_learning_rate()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
-                  (losses.avg, top1.avg, top5.avg, t2 - t1))
+            logger.info(
+                f'* Test loss: {losses.avg:.4f}  top1: {top1.avg:.4f}  top5: {top5.avg:.4f}  time: {t2 - t1:.4f}'
+            )
         return best_acc
 
     def _validate(self, val_loader, model, verbose=False):
@@ -522,8 +533,9 @@ class LinearQuantizeEnv:
             bar.finish()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
-                  (losses.avg, top1.avg, top5.avg, t2 - t1))
+            logger.info(
+                f'* Test loss: {losses.avg:.4f}  top1: {top1.avg:.4f}  top5: {top5.avg:.4f}  time: {t2 - t1:.4f}'
+            )
         if self.use_top5:
             return top5.avg
         else:
