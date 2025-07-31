@@ -48,7 +48,13 @@ class LinearQuantizeEnv:
         self.model_for_measure = deepcopy(model)
         self.model_name = args.arch
         self.cur_ind = 0
-        self.strategy = []  # quantization strategy
+        self.quantization_strategy = []  # quantization strategy
+
+        # Crossbar cell resolution constraint
+        self.consider_cell_resolution = args.consider_cell_resolution
+        self.cell_resolution = 1  # Default to 1 (no constraint)
+        if self.consider_cell_resolution:
+            self._load_hardware_config()
 
         self.finetune_lr = args.finetune_lr
         self.optimizer = optim.SGD(model.parameters(),
@@ -75,10 +81,13 @@ class LinearQuantizeEnv:
         if self.amp:
             self.scaler = GradScaler()
 
+        # force first/last layer precision
+        self.force_first_last_layer = args.force_first_last_layer
+
         # options from args
         self.min_bit = args.min_bit
         self.max_bit = args.max_bit
-        self.float_bit = float_bit * 1.
+        self.orig_bit = args.orig_bit * 1.
         self.last_weight_action = self.max_bit
         self.last_activation_action = self.max_bit
         self.action_radio_button = True
@@ -101,6 +110,8 @@ class LinearQuantizeEnv:
         self.model = self.model.to(self.device)
         # self.org_acc = self._validate(self.val_loader, self.model)
         self.org_acc = self._validate(self.train_loader, self.model)
+        self.target_acc = self.org_acc - args.acc_drop
+
         # build embedding (static part), same as pruning
         self._build_state_embedding()
 
@@ -108,10 +119,6 @@ class LinearQuantizeEnv:
         self.cost_mode = 'cloud_latency'
         self.simulator_batch = 16
         self.cost_lookuptable = self._get_lookuptable()
-
-        # sanity check
-        assert self.compress_ratio > self._min_cost() / self._org_cost(), \
-            'Error! You can make achieve compress_ratio smaller than min_bit!'
 
         # restore weight
         self.reset()
@@ -131,14 +138,18 @@ class LinearQuantizeEnv:
             self.last_weight_action = action
         else:
             self.last_activation_action = action
-            self.strategy.append(
+            self.quantization_strategy.append(
                 [self.last_weight_action,
                  self.last_activation_action])  # save action to strategy
 
         # all the actions are made
         if self._is_final_layer() and (not self.action_radio_button):
-            self._final_action_wall()
-            assert len(self.strategy) == len(self.quantizable_idx)
+            # Force the first and last layer to be 8 bits if specified
+            if self.force_first_last_layer:
+                self._keep_first_last_layer()
+
+            assert len(self.quantization_strategy) == len(
+                self.quantizable_idx), 'Quantization strategy length mismatch'
             cost = self._cur_cost()
             cost_ratio = cost / self._org_cost()
 
@@ -146,17 +157,15 @@ class LinearQuantizeEnv:
                                       strategy=self.strategy)
             self.model = calibrate(self.model, self.train_loader)
             if self.finetune_flag:
-                acc = self._finetune(self.train_loader,
-                                     self.model,
-                                     epochs=self.finetune_epoch,
-                                     verbose=False)
-                # train_acc = self._finetune(self.train_loader, self.model, epochs=self.finetune_epoch, verbose=False)
-                # acc = self._validate(self.val_loader, self.model)
+                self._finetune(self.train_loader,
+                               self.model,
+                               epochs=self.finetune_epoch,
+                               verbose=False)
+                acc = self._validate(self.val_loader, self.model)
             else:
                 acc = self._validate(self.val_loader, self.model)
 
-            # reward = self.reward(acc, w_size_ratio)
-            reward = self.reward(acc)
+            reward = self.reward(acc, cost_ratio)
 
             info_set = {
                 'cost_ratio': cost_ratio,
@@ -201,8 +210,26 @@ class LinearQuantizeEnv:
 
     # for quantization
     def reward(self, acc, cost_ratio=None):
-        if cost_ratio is not None:
-            return (acc - self.org_acc + 1. / cost_ratio) * 0.1
+        if self.target_acc is not None:
+            # Calculate the base reward from latency reduction
+            if cost_ratio is None:
+                current_cost = self._cur_cost()
+                original_cost = self._org_cost()
+                cost_ratio = current_cost / original_cost
+
+            if acc < self.target_acc:
+                # Strong penalty for going below target accuracy
+                accuracy_gap = self.target_acc - acc
+                return -10.0 * accuracy_gap
+            else:
+                # Strong positive reward for aggressive quantization when accuracy is maintained
+                # Use linear scaling instead of squared to avoid extreme values
+                latency_reward = 100.0 * (1.0 / cost_ratio - 1.0)
+
+                # Small bonus for accuracy above target
+                acc_bonus = 0.1 * (acc - self.target_acc)
+
+                return latency_reward + acc_bonus
         return (acc - self.org_acc) * 0.1
 
     def reset(self):
@@ -214,58 +241,86 @@ class LinearQuantizeEnv:
                                    momentum=0.9,
                                    weight_decay=4e-5)
         self.cur_ind = 0
-        self.strategy = []  # quantization strategy
+        self.quantization_strategy = []  # quantization strategy
         obs = self.layer_embedding[0].copy()
         return obs
 
     def _is_final_layer(self):
         return self.cur_ind == len(self.quantizable_idx) - 1
 
-    def _final_action_wall(self):
-        target = self.compress_ratio * self._org_cost()
-        min_cost = 0
-        for i, n_bit in enumerate(self.strategy):
-            min_cost += self.cost_lookuptable[i][int(self.min_bit -
-                                                     1)][int(self.min_bit - 1)]
-
-        logger.debug(
-            f'before action_wall: {self.strategy}, min_cost: {min_cost}, current_cost: {self._cur_cost()}'
-        )
-        while min_cost < self._cur_cost() and target < self._cur_cost():
-            # print('current: ', self.strategy, min_cost, self._cur_cost())
-            for i, n_bit in enumerate(reversed(self.strategy)):
-                if n_bit[1] > self.min_bit:
-                    self.strategy[-(i + 1)][1] -= 1
-                self._keep_first_last_layer()
-                if target >= self._cur_cost():
-                    break
-                if n_bit[0] > self.min_bit:
-                    self.strategy[-(i + 1)][0] -= 1
-                self._keep_first_last_layer()
-                if target >= self._cur_cost():
-                    break
-        logger.debug(
-            f'after action_wall: {self.strategy}, min_cost: {min_cost}, current_cost: {self._cur_cost()}'
-        )
-
     def _keep_first_last_layer(self):
-        self.strategy[0][0] = 8
-        # self.strategy[0][1] = 8
-        # input image is already 8 bit
-        self.strategy[0][1] = -1
-        self.strategy[-1][0] = 8
-        self.strategy[-1][1] = 8
+        self.quantization_strategy[0][0] = 8
+        self.quantization_strategy[0][1] = 8
+        self.quantization_strategy[-1][0] = 8
+        self.quantization_strategy[-1][1] = 8
+
+    def _load_hardware_config(self):
+        """Load hardware configuration and extract cell resolution."""
+        config_path = Path(__file__).resolve(
+        ).parent.parent / 'simulator' / 'hardware_config.yaml'
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            self.cell_resolution = config['crossbar']['resolution_weight_bits']
+            logger.info(
+                f'=> Loaded crossbar cell resolution: {self.cell_resolution} bits'
+            )
+        except FileNotFoundError:
+            logger.warning(
+                f'Hardware config file not found at {config_path}. Using default resolution of 1.'
+            )
+            self.cell_resolution = 1
+        except KeyError as e:
+            logger.warning(
+                f'Missing key in hardware config: {e}. Using default resolution of 1.'
+            )
+            self.cell_resolution = 1
+
+    def _get_valid_bit_widths(self):
+        """Get list of valid bit widths based on cell resolution constraint."""
+        if not self.consider_cell_resolution:
+            return list(range(int(self.min_bit), int(self.max_bit) + 1))
+
+        valid_bits = []
+        for bit in range(int(self.min_bit), int(self.max_bit) + 1):
+            if bit % self.cell_resolution == 0:
+                valid_bits.append(bit)
+
+        # Ensure that we have at least one option
+        if not valid_bits:
+            # This can only happen if the cell resolution is bigger than the max_bit
+            logger.warning(
+                f'Cell resolution ({self.cell_resolution}) is larger than max_bit ({self.max_bit}). Using max_bit as only valid option.'
+            )
+            valid_bits.append(int(self.max_bit))
+
+        return sorted(valid_bits)
 
     def _action_wall(self, action):
         assert len(self.quantization_strategy
                    ) == self.cur_ind, 'Quantization strategy length mismatch'
         # limit the action to certain range
         action = float(action)
-        min_bit, max_bit = self.bound_list[self.cur_ind]
-        lbound, rbound = min_bit - 0.5, max_bit + 0.5  # same stride length for each bit
-        action = (rbound - lbound) * action + lbound
-        action = int(np.round(action, 0))
-        return action  # not constrained here
+
+        if self.consider_cell_resolution and self.action_radio_button:
+            # Only apply cell resolution constraint to weight quantization (when action_radio_button is True)
+            # Map continuous action to valid discrete bit widths for weights
+            valid_bits = self._get_valid_bit_widths()
+
+            # Create equal stride length for each valid bit width using index mapping
+            num_valid_bits = len(valid_bits)
+            action_mapped = int(num_valid_bits * action)
+            action_idx = min(action_mapped, num_valid_bits - 1)
+            quantized_action = valid_bits[action_idx]
+
+            return quantized_action
+        else:
+            # Original logic for activation quantization or when cell resolution is not considered
+            min_bit, max_bit = self.bound_list[self.cur_ind]
+            lbound, rbound = min_bit - 0.5, max_bit + 0.5  # same stride length for each bit
+            action = (rbound - lbound) * action + lbound
+            action = int(np.round(action, 0))
+            return action
 
     def _set_mixed_precision(self, quantizable_idx, strategy):
         assert len(quantizable_idx) == len(strategy), \
@@ -284,7 +339,7 @@ class LinearQuantizeEnv:
     def _cur_cost(self):
         cur_cost = 0.
         # quantized
-        for i, n_bit in enumerate(self.strategy):
+        for i, n_bit in enumerate(self.quantization_strategy):
             cur_cost += self.cost_lookuptable[i, n_bit[0] - 1, n_bit[1] - 1]
         return cur_cost
 
@@ -292,20 +347,9 @@ class LinearQuantizeEnv:
         org_cost = 0
         for i in range(self.cost_lookuptable.shape[0]):
             org_cost += self.cost_lookuptable[i,
-                                              int(self.float_bit - 1),
-                                              int(self.float_bit - 1)]
+                                              int(self.orig_bit - 1),
+                                              int(self.orig_bit - 1)]
         return org_cost
-
-    def _min_cost(self):
-        min_cost = 0
-        for i in range(self.cost_lookuptable.shape[0]):
-            if i == 0 or i == (self.cost_lookuptable.shape[0] - 1):
-                min_cost += self.cost_lookuptable[i, -1, -1]
-            else:
-                min_cost += self.cost_lookuptable[i,
-                                                  int(self.min_bit - 1),
-                                                  int(self.min_bit - 1)]
-        return min_cost
 
     def _init_data(self):
         self.train_loader, self.val_loader, n_class = get_split_train_dataset(
