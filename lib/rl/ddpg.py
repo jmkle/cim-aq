@@ -1,6 +1,7 @@
-import os
+import sys
+from pathlib import Path
 
-os.sys.path.insert(0, os.path.abspath("../.."))
+sys.path.insert(0, str((Path(__file__).resolve().parent.parent.parent)))
 import numpy as np
 import torch
 import torch.nn as nn
@@ -11,7 +12,7 @@ from lib.utils.utils import (sample_from_truncated_normal_distribution,
                              to_numpy, to_tensor)
 
 criterion = nn.MSELoss()
-USE_CUDA = torch.cuda.is_available()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class Actor(nn.Module):
@@ -123,7 +124,7 @@ class DDPG(object):
         self.is_training = True
 
         #
-        if USE_CUDA: self.cuda()
+        self.to(device)
 
         # moving average baseline
         self.moving_average = None
@@ -153,7 +154,7 @@ class DDPG(object):
             ])
 
         target_q_batch = to_tensor(reward_batch) + \
-                         self.discount * to_tensor(terminal_batch.astype(np.float)) * next_q_values
+                         self.discount * to_tensor(terminal_batch.astype(float)) * next_q_values
 
         # Critic update
         self.critic.zero_grad()
@@ -191,11 +192,11 @@ class DDPG(object):
         self.critic.eval()
         self.critic_target.eval()
 
-    def cuda(self):
-        self.actor.cuda()
-        self.actor_target.cuda()
-        self.critic.cuda()
-        self.critic_target.cuda()
+    def to(self, device):
+        self.actor.to(device)
+        self.actor_target.to(device)
+        self.critic.to(device)
+        self.critic_target.to(device)
 
     def observe(self, r_t, s_t, s_t1, a_t, done):
         if self.is_training:
@@ -211,9 +212,14 @@ class DDPG(object):
         # assert episode >= self.warmup, 'Episode: {} warmup: {}'.format(episode, self.warmup)
         action = to_numpy(self.actor(to_tensor(np.array(s_t).reshape(
             1, -1)))).squeeze(0)
-        delta = self.init_delta * (self.delta_decay**(episode - self.warmup))
-        # action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
-        #from IPython import embed; embed() # TODO eable decay_epsilon=True
+
+        # Increased exploration during early training
+        if episode < self.warmup:
+            delta = self.init_delta
+        else:
+            delta = self.init_delta * (self.delta_decay
+                                       **(episode - self.warmup))
+
         action = sample_from_truncated_normal_distribution(lower=self.lbound,
                                                            upper=self.rbound,
                                                            mu=action,
@@ -232,9 +238,11 @@ class DDPG(object):
     def load_weights(self, output):
         if output is None: return
 
-        self.actor.load_state_dict(torch.load('{}/actor.pkl'.format(output)))
+        self.actor.load_state_dict(
+            torch.load('{}/actor.pkl'.format(output), map_location=device))
 
-        self.critic.load_state_dict(torch.load('{}/critic.pkl'.format(output)))
+        self.critic.load_state_dict(
+            torch.load('{}/critic.pkl'.format(output), map_location=device))
 
     def save_model(self, output):
         torch.save(self.actor.state_dict(), '{}/actor.pkl'.format(output))
@@ -242,7 +250,7 @@ class DDPG(object):
 
     def seed(self, s):
         torch.manual_seed(s)
-        if USE_CUDA:
+        if device.type == 'cuda':
             torch.cuda.manual_seed(s)
 
     def soft_update(self, target, source):

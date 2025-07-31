@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from lib.utils.quantize_utils import QConv2d, QLinear
-
 
 class AverageMeter(object):
 
@@ -37,7 +35,7 @@ class AverageMeter(object):
             self.avg = self.sum / self.count
 
 
-class Logger(object):
+class MetricsLogger(object):
 
     def __init__(self, fpath, title=None, resume=False):
         self.file = None
@@ -103,29 +101,28 @@ def accuracy(output, target, topk=(1, )):
 
     _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
+    correct = pred.eq(target.reshape(1, -1).expand_as(pred))
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0)
+        correct_k = correct[:k].flatten().float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
 
-USE_CUDA = torch.cuda.is_available()
-FLOAT = torch.cuda.FloatTensor if USE_CUDA else torch.FloatTensor
-from torch.autograd import Variable
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def to_numpy(var):
     # return var.cpu().data.numpy()
-    return var.cpu().data.numpy() if USE_CUDA else var.data.numpy()
+    return var.cpu().detach().numpy() if var.is_cuda else var.detach().numpy()
 
 
-def to_tensor(ndarray, volatile=False, requires_grad=False, dtype=FLOAT):
-    return Variable(torch.from_numpy(ndarray),
-                    volatile=volatile,
-                    requires_grad=requires_grad).type(dtype)
+def to_tensor(ndarray, requires_grad=False, dtype=torch.float32):
+    return torch.tensor(ndarray,
+                        requires_grad=requires_grad,
+                        device=device,
+                        dtype=dtype)
 
 
 def sample_from_truncated_normal_distribution(lower, upper, mu, sigma, size=1):
@@ -134,39 +131,6 @@ def sample_from_truncated_normal_distribution(lower, upper, mu, sigma, size=1):
                                loc=mu,
                                scale=sigma,
                                size=size)
-
-
-# logging
-def prRed(prt):
-    print("\033[91m {}\033[00m".format(prt))
-
-
-def prGreen(prt):
-    print("\033[92m {}\033[00m".format(prt))
-
-
-def prYellow(prt):
-    print("\033[93m {}\033[00m".format(prt))
-
-
-def prLightPurple(prt):
-    print("\033[94m {}\033[00m".format(prt))
-
-
-def prPurple(prt):
-    print("\033[95m {}\033[00m".format(prt))
-
-
-def prCyan(prt):
-    print("\033[96m {}\033[00m".format(prt))
-
-
-def prLightGray(prt):
-    print("\033[97m {}\033[00m".format(prt))
-
-
-def prBlack(prt):
-    print("\033[98m {}\033[00m".format(prt))
 
 
 def get_num_gen(gen):
@@ -268,7 +232,10 @@ def measure_model(model, H, W):
     global count_ops, count_params
     count_ops = 0
     count_params = 0
-    data = torch.zeros(1, 3, H, W).cuda()
+
+    # Get the device of the first model parameter
+    device = next(model.parameters()).device
+    data = torch.zeros(1, 3, H, W, device=device)
 
     def should_measure(x):
         return is_leaf(x)
@@ -300,7 +267,9 @@ def measure_model(model, H, W):
                 restore_forward(child)
 
     modify_forward(model)
-    model.forward(data)
+    model.eval()
+    with torch.no_grad():
+        model(data)
     restore_forward(model)
 
     return count_ops, count_params

@@ -8,20 +8,27 @@ import os
 import random
 import shutil
 import time
+from pathlib import Path
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
-from progress.bar import Bar
+import wandb
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 import models as customized_models
 from lib.utils.data_utils import get_dataset
+from lib.utils.logger import logger as main_logger
 from lib.utils.quantize_utils import (QConv2d, QLinear, calibrate,
                                       kmeans_update_model, quantize_model)
-from lib.utils.utils import AverageMeter, Logger, accuracy
+from lib.utils.utils import AverageMeter, MetricsLogger, accuracy
 
 # Models
 default_model_names = sorted(name for name in models.__dict__
@@ -132,11 +139,15 @@ parser.add_argument('--free_high_bit',
                     default=True,
                     type=bool,
                     help='free the high bit (>6)')
-parser.add_argument('--half', action='store_true', help='half')
+parser.add_argument('--amp', action='store_true', help='use amp')
 parser.add_argument('--half_type',
                     default='O1',
                     type=str,
                     help='half type: O0/O1/O2/O3')
+parser.add_argument('--strategy_file',
+                    required=True,
+                    type=str,
+                    help='path to strategy file')
 # Architecture
 parser.add_argument('--arch',
                     '-a',
@@ -158,20 +169,29 @@ parser.add_argument('--gpu_id',
                     type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 
+# W&B options
+parser.add_argument('--wandb_enable',
+                    action='store_true',
+                    help='enable Weights & Biases logging')
+parser.add_argument('--wandb_project',
+                    default='haq-quantization',
+                    type=str,
+                    help='W&B project name')
+
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 lr_current = state['lr']
 
 # Use CUDA
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
-use_cuda = torch.cuda.is_available()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Random seed
 if args.manualSeed is None:
     args.manualSeed = random.randint(1, 10000)
 random.seed(args.manualSeed)
 torch.manual_seed(args.manualSeed)
-if use_cuda:
+if device.type == 'cuda':
     torch.cuda.manual_seed_all(args.manualSeed)
 
 best_acc = 0  # best test accuracy
@@ -184,11 +204,10 @@ def load_my_state_dict(model, state_dict):
             continue
         param_data = param.data
         if model_state[name].shape == param_data.shape:
-            # print("load%s"%name)
             model_state[name].copy_(param_data)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
+def train(train_loader, model, criterion, optimizer, epoch, device):
     # switch to train mode
     model.train()
 
@@ -199,37 +218,45 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
     top5 = AverageMeter()
     end = time.time()
 
-    bar = Bar('Processing', max=len(train_loader))
-    for batch_idx, (inputs, targets) in enumerate(train_loader):
+    # Get scaler for AMP
+    if args.amp:
+        scaler = GradScaler()
+    else:
+        scaler = None
+
+    pbar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}')
+    for inputs, targets in pbar:
         # measure data loading time
         data_time.update(time.time() - end)
 
-        if use_cuda:
-            inputs, targets = inputs.cuda(), targets.cuda()
-        inputs, targets = torch.autograd.Variable(
-            inputs), torch.autograd.Variable(targets)
+        inputs, targets = inputs.to(device), targets.to(device)
 
         # compute output
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        optimizer.zero_grad()
+        if args.amp:
+            with autocast(device_type=device.type):
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
+
+            # Scales loss and calls backward() to create scaled gradients
+            scaler.scale(loss).backward()
+
+            # Unscales gradients and calls optimizer.step()
+            scaler.step(optimizer)
+
+            # Updates the scale for next iteration
+            scaler.update()
+        else:
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            loss.backward()
+            optimizer.step()
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
         losses.update(loss.item(), inputs.size(0))
         top1.update(prec1.item(), inputs.size(0))
         top5.update(prec5.item(), inputs.size(0))
-
-        # compute gradient
-        optimizer.zero_grad()
-        if args.half:
-            with apex.amp.scale_loss(loss, optimizer) as scaled_loss:
-                scaled_loss.backward()
-            # with amp_handle.scale_loss(loss, optimizer) as scaled_loss:
-            #     scaled_loss.backward()
-        else:
-            loss.backward()
-        # do SGD step
-        optimizer.step()
 
         if not args.linear_quantization:
             kmeans_update_model(model,
@@ -241,27 +268,19 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        # plot progress
-        if batch_idx % 1 == 0:
-            bar.suffix = \
-                '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
-                'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                    batch=batch_idx + 1,
-                    size=len(train_loader),
-                    data=data_time.val,
-                    bt=batch_time.val,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg,
-                )
-            bar.next()
-    bar.finish()
-    return losses.avg, top1.avg
+        # Update progress bar
+        pbar.set_postfix({
+            'Loss': f'{losses.avg:.4f}',
+            'Top1': f'{top1.avg:.4f}',
+            'Top5': f'{top5.avg:.4f}',
+            'Data': f'{data_time.val:.4f}s',
+            'Batch': f'{batch_time.val:.4f}s'
+        })
+
+    return losses.avg, top1.avg, top5.avg
 
 
-def test(val_loader, model, criterion, epoch, use_cuda):
+def test(val_loader, model, criterion, epoch, device):
     global best_acc
 
     batch_time = AverageMeter()
@@ -275,22 +294,19 @@ def test(val_loader, model, criterion, epoch, use_cuda):
         model.eval()
 
         end = time.time()
-        bar = Bar('Processing', max=len(val_loader))
-        for batch_idx, (inputs, targets) in enumerate(val_loader):
+        pbar = tqdm(val_loader, desc=f'Testing Epoch {epoch+1}')
+        for inputs, targets in pbar:
             # measure data loading time
             data_time.update(time.time() - end)
 
-            if use_cuda:
-                inputs, targets = inputs.cuda(), targets.cuda()
-            inputs, targets = torch.autograd.Variable(
-                inputs, volatile=True), torch.autograd.Variable(targets)
+            inputs, targets = inputs.to(device), targets.to(device)
 
             # compute output
             outputs = model(inputs)
             loss = criterion(outputs, targets)
 
             # measure accuracy and record loss
-            prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+            prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
             losses.update(loss.item(), inputs.size(0))
             top1.update(prec1.item(), inputs.size(0))
             top5.update(prec5.item(), inputs.size(0))
@@ -299,35 +315,27 @@ def test(val_loader, model, criterion, epoch, use_cuda):
             batch_time.update(time.time() - end)
             end = time.time()
 
-            # plot progress
-            if batch_idx % 1 == 0:
-                bar.suffix  = \
-                    '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
-                    'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                        batch=batch_idx + 1,
-                        size=len(val_loader),
-                        data=data_time.avg,
-                        bt=batch_time.avg,
-                        total=bar.elapsed_td,
-                        eta=bar.eta_td,
-                        loss=losses.avg,
-                        top1=top1.avg,
-                        top5=top5.avg,
-                        )
-                bar.next()
-        bar.finish()
-    return losses.avg, top1.avg
+            # Update progress bar
+            pbar.set_postfix({
+                'Loss': f'{losses.avg:.4f}',
+                'Top1': f'{top1.avg:.4f}',
+                'Top5': f'{top5.avg:.4f}',
+                'Data': f'{data_time.avg:.4f}s',
+                'Batch': f'{batch_time.avg:.4f}s'
+            })
+
+    return losses.avg, top1.avg, top5.avg
 
 
 def save_checkpoint(state,
                     is_best,
                     checkpoint='checkpoint',
                     filename='checkpoint.pth.tar'):
-    filepath = os.path.join(checkpoint, filename)
-    torch.save(state, filepath)
+    filepath = Path(checkpoint) / filename
+    torch.save(state, str(filepath))
     if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint,
-                                               'model_best.pth.tar'))
+        shutil.copyfile(str(filepath),
+                        str(Path(checkpoint) / 'model_best.pth.tar'))
 
 
 def adjust_learning_rate(optimizer, epoch):
@@ -352,8 +360,11 @@ def adjust_learning_rate(optimizer, epoch):
 if __name__ == '__main__':
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
 
-    if not os.path.isdir(args.checkpoint):
-        os.makedirs(args.checkpoint)
+    if args.resume:
+        args.checkpoint = str(Path(args.resume).parent)
+
+    if not Path(args.checkpoint).is_dir():
+        Path(args.checkpoint).mkdir(parents=True, exist_ok=True)
 
     train_loader, val_loader, n_class = get_dataset(
         dataset_name=args.data_name,
@@ -361,31 +372,24 @@ if __name__ == '__main__':
         n_worker=args.workers,
         data_root=args.data)
 
+    quantization_strategy = np.load(args.strategy_file).tolist()
+
+    main_logger.info(f'Quantization strategy: {quantization_strategy}')
+
     model = models.__dict__[args.arch](pretrained=args.pretrained)
-    print("=> creating model '{}'".format(args.arch), ' pretrained is ',
-          args.pretrained)
-    print('    Total params: %.2fM' %
-          (sum(p.numel() for p in model.parameters()) / 1000000.0))
+    main_logger.info(
+        f"=> created model '{args.arch}' pretrained is {args.pretrained}")
+    main_logger.info(
+        f'    Total params: {sum(p.numel() for p in model.parameters()) / 1000000.0:.4f}M'
+    )
     cudnn.benchmark = True
 
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().cuda()
+    criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.SGD(model.parameters(),
                           lr=args.lr,
                           momentum=args.momentum,
                           weight_decay=args.weight_decay)
-
-    # use HalfTensor
-    if args.half:
-        try:
-            import apex
-        except ImportError:
-            raise ImportError(
-                "Please install apex from https://github.com/NVIDIA/apex")
-        model.cuda()
-        model, optimizer = apex.amp.initialize(model,
-                                               optimizer,
-                                               opt_level=args.half_type)
 
     if args.linear_quantization:
         quantizable_idx = []
@@ -393,24 +397,11 @@ if __name__ == '__main__':
             if type(m) in [QConv2d, QLinear]:
                 quantizable_idx.append(i)
         # print(model)
-        print(quantizable_idx)
+        main_logger.info(quantizable_idx)
 
-        if 'mobilenetv2' in args.arch:
-            strategy = [[8, -1], [7, 7], [5, 6], [4, 6], [5, 6], [5, 7],
-                        [5, 6], [7, 4], [4, 6], [4, 6], [7, 7], [5, 6], [4, 6],
-                        [7, 3], [5, 7], [4, 7], [7, 3], [5, 7], [4, 7], [7, 7],
-                        [4, 7], [4, 7], [6, 4], [6, 7], [4, 7], [7, 4], [6, 7],
-                        [5, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [6, 7],
-                        [6, 4], [5, 7], [6, 7], [6, 4], [5, 7], [6, 7], [7, 7],
-                        [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7],
-                        [7, 7], [7, 7], [4, 7], [7, 7], [8, 8]]
-        else:
-            raise NotImplementedError
-
-        print(strategy)
         quantize_layer_bit_dict = {
             n: b
-            for n, b in zip(quantizable_idx, strategy)
+            for n, b in zip(quantizable_idx, quantization_strategy)
         }
         for i, layer in enumerate(model.modules()):
             if i not in quantizable_idx:
@@ -418,80 +409,88 @@ if __name__ == '__main__':
             else:
                 layer.w_bit = quantize_layer_bit_dict[i][0]
                 layer.a_bit = quantize_layer_bit_dict[i][1]
-        model = model.cuda()
+        model = model.to(device)
         model = calibrate(model, train_loader)
     else:
         quantizable_idx = []
         for i, m in enumerate(model.modules()):
             if type(m) in [nn.Conv2d, nn.Linear]:
                 quantizable_idx.append(i)
-        print(quantizable_idx)
+        main_logger.info(quantizable_idx)
 
-        if args.arch.startswith('resnet50'):
-            # resnet50 ratio 10%
-            strategy = [
-                6, 6, 6, 6, 5, 5, 6, 5, 5, 6, 5, 5, 6, 5, 5, 5, 5, 5, 4, 5, 4,
-                4, 5, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 4, 3, 4, 4,
-                3, 4, 3, 3, 2, 3, 2, 3, 3, 2, 3, 4
-            ]
-        else:
-            # you can put your own strategy here
-            raise NotImplementedError
-        print('strategy for ' + args.arch + ': ', strategy)
 
-        assert len(quantizable_idx) == len(strategy), \
+        assert len(quantizable_idx) == len(quantization_strategy), \
             'You should provide the same number of bit setting as layer list for weight quantization!'
         centroid_label_dict = quantize_model(model,
                                              quantizable_idx,
-                                             strategy,
+                                             quantization_strategy,
                                              mode='cpu',
                                              quantize_bias=False,
                                              centroids_init='k-means++',
                                              max_iter=50)
 
-    if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-        model.features = torch.nn.DataParallel(model.features)
-        model = model.cuda()
+    if torch.cuda.device_count() > 1:
+        if (args.arch.startswith('alexnet') or args.arch.startswith('vgg')
+                or args.arch.startswith('qalexnet')
+                or args.arch.startswith('qvgg')):
+            model.features = torch.nn.DataParallel(model.features)
+            model.to(device)
+        else:
+            model = torch.nn.DataParallel(model).to(device)
     else:
-        model = torch.nn.DataParallel(model).cuda()
+        model = model.to(device)
 
     # Resume
     title = 'ImageNet-' + args.arch
     if args.resume:
         # Load checkpoint.
-        print('==> Resuming from checkpoint..')
-        assert os.path.isfile(
-            args.resume), 'Error: no checkpoint directory found!'
-        args.checkpoint = os.path.dirname(args.resume)
-        checkpoint = torch.load(args.resume)
+        main_logger.info('==> Resuming from checkpoint..')
+        assert Path(
+            args.resume).is_file(), 'Error: no checkpoint directory found!'
+        args.checkpoint = str(Path(args.resume).parent)
+        checkpoint = torch.load(args.resume, map_location=device)
         best_acc = checkpoint['best_acc']
-        print(best_acc)
+        main_logger.info(f'Previous best accuracy: {best_acc}')
         start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['state_dict'], strict=False)
+        model.to(device)
         optimizer.load_state_dict(checkpoint['optimizer'])
-        if os.path.isfile(os.path.join(args.checkpoint, 'log.txt')):
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
-                            title=title,
-                            resume=True)
+        log_path = Path(args.checkpoint) / 'log.txt'
+        if log_path.is_file():
+            logger = MetricsLogger(str(log_path), title=title, resume=True)
         else:
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
-                            title=title)
+            logger = MetricsLogger(str(log_path), title=title)
             logger.set_names([
                 'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
-                'Valid Acc.'
+                'Valid Acc.', 'Train Acc5', 'Valid Acc5'
             ])
     else:
-        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+        log_path = Path(args.checkpoint) / 'log.txt'
+        logger = MetricsLogger(str(log_path), title=title)
         logger.set_names([
             'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
-            'Valid Acc.'
+            'Valid Acc.', 'Train Acc5', 'Valid Acc5'
         ])
 
+    # Setup tensorboard writer
+    tf_writer = SummaryWriter(log_dir=str(Path(args.checkpoint) / 'logs'))
+
+    # Initialize W&B if enabled
+    wandb_run = None
+    if args.wandb_enable:
+        wandb_run = wandb.init(
+            project=args.wandb_project,
+            name=f"finetune_{Path(args.checkpoint).name}",
+            config=vars(args),
+            tags=['finetuning', args.arch, args.data_name, 'quantized'])
+
     if args.evaluate:
-        print('\nEvaluation only')
-        test_loss, test_acc = test(val_loader, model, criterion, start_epoch,
-                                   use_cuda)
-        print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
+        main_logger.info('\nEvaluation only')
+        test_loss, test_acc, test_acc5 = test(val_loader, model, criterion,
+                                              start_epoch, device)
+        main_logger.info(
+            f' Test Loss:  {test_loss:.8f}, Test Acc:  {test_acc:.4f}, Test Acc5: {test_acc5:.4f}'
+        )
         exit()
 
     # Train and val
@@ -510,16 +509,20 @@ if __name__ == '__main__':
                                                  max_iter=50,
                                                  free_high_bit=False)
 
-        print('\nEpoch: [%d | %d] LR: %f' %
-              (epoch + 1, args.epochs, lr_current))
+        main_logger.info(
+            f'\nEpoch: [{epoch + 1} | {args.epochs}] LR: {lr_current:f}')
 
-        train_loss, train_acc = train(train_loader, model, criterion,
-                                      optimizer, epoch, use_cuda)
-        test_loss, test_acc = test(val_loader, model, criterion, epoch,
-                                   use_cuda)
+        train_loss, train_acc, train_acc5 = train(train_loader, model,
+                                                  criterion, optimizer, epoch,
+                                                  device)
+        test_loss, test_acc, test_acc5 = test(val_loader, model, criterion,
+                                              epoch, device)
 
         # append logger file
-        logger.append([lr_current, train_loss, test_loss, train_acc, test_acc])
+        logger.append([
+            lr_current, train_loss, test_loss, train_acc, test_acc, train_acc5,
+            test_acc5
+        ])
 
         # save model
         is_best = test_acc > best_acc
@@ -535,7 +538,25 @@ if __name__ == '__main__':
             is_best,
             checkpoint=args.checkpoint)
 
+        # ============ TensorBoard logging ============#
+        # Log the scalar values
+        info = {
+            'train_loss': train_loss,
+            'train_accuracy': train_acc,
+            'train_accuracy_top5': train_acc5,
+            'test_loss': test_loss,
+            'test_accuracy': test_acc,
+            'test_accuracy_top5': test_acc5,
+            'learning_rate': lr_current
+        }
+
+        for tag, value in info.items():
+            tf_writer.add_scalar(tag, value, epoch)
+
+        # ============ W&B logging ============#
+        if args.wandb_enable and wandb_run is not None:
+            wandb_run.log(info, step=epoch)
+
     logger.close()
 
-    print('Best acc:')
-    print(best_acc)
+    main_logger.info(f'Best accuracy: {best_acc}')

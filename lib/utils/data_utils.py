@@ -2,7 +2,7 @@
 # Kuan Wang*, Zhijian Liu*, Yujun Lin*, Ji Lin, Song Han
 # {kuanwang, zhijian, yujunlin, jilin, songhan}@mit.edu
 
-import os
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -13,25 +13,32 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data.sampler import SubsetRandomSampler
 
+from lib.utils.logger import logger
+
 
 def get_dataset(dataset_name,
                 batch_size,
                 n_worker,
                 data_root='data/imagenet',
-                for_inception=False):
-    print('==> Preparing data..')
+                for_inception=False,
+                device=None):
+    device = device or torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu")
+    pin_memory = device.type == 'cuda'
+
+    logger.info(f'==> Preparing data for {dataset_name}..')
     if dataset_name == 'imagenet':
-        traindir = os.path.join(data_root, 'train')
-        valdir = os.path.join(data_root, 'val')
-        assert os.path.exists(traindir), traindir + ' not found'
-        assert os.path.exists(valdir), valdir + ' not found'
+        traindir = Path(data_root) / 'train'
+        valdir = Path(data_root) / 'val'
+        assert traindir.exists(), f'{traindir} not found'
+        assert valdir.exists(), f'{valdir} not found'
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
 
         input_size = 299 if for_inception else 224
 
         train_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
-            traindir,
+            str(traindir),
             transforms.Compose([
                 transforms.RandomResizedCrop(input_size),
                 transforms.RandomHorizontalFlip(),
@@ -41,10 +48,10 @@ def get_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    shuffle=True,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
 
         val_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
-            valdir,
+            str(valdir),
             transforms.Compose([
                 transforms.Resize(int(input_size / 0.875)),
                 transforms.CenterCrop(input_size),
@@ -54,21 +61,21 @@ def get_dataset(dataset_name,
                                                  batch_size=batch_size,
                                                  shuffle=False,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
 
         n_class = 1000
     elif dataset_name == 'imagenet100':
-        traindir = os.path.join(data_root, 'train')
-        valdir = os.path.join(data_root, 'val')
-        assert os.path.exists(traindir), traindir + ' not found'
-        assert os.path.exists(valdir), valdir + ' not found'
+        traindir = Path(data_root) / 'train'
+        valdir = Path(data_root) / 'val'
+        assert traindir.exists(), f'{traindir} not found'
+        assert valdir.exists(), f'{valdir} not found'
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
 
         input_size = 299 if for_inception else 224
 
         train_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
-            traindir,
+            str(traindir),
             transforms.Compose([
                 transforms.RandomResizedCrop(input_size),
                 transforms.RandomHorizontalFlip(),
@@ -78,10 +85,10 @@ def get_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    shuffle=True,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
 
         val_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
-            valdir,
+            str(valdir),
             transforms.Compose([
                 transforms.Resize(int(input_size / 0.875)),
                 transforms.CenterCrop(input_size),
@@ -91,21 +98,21 @@ def get_dataset(dataset_name,
                                                  batch_size=batch_size,
                                                  shuffle=False,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
 
         n_class = 100
     elif dataset_name == 'imagenet10':
-        traindir = os.path.join(data_root, 'train')
-        valdir = os.path.join(data_root, 'val')
-        assert os.path.exists(traindir), traindir + ' not found'
-        assert os.path.exists(valdir), valdir + ' not found'
+        traindir = Path(data_root) / 'train'
+        valdir = Path(data_root) / 'val'
+        assert traindir.exists(), f'{traindir} not found'
+        assert valdir.exists(), f'{valdir} not found'
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
 
         input_size = 299 if for_inception else 224
 
         train_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
-            traindir,
+            str(traindir),
             transforms.Compose([
                 transforms.RandomResizedCrop(input_size),
                 transforms.RandomHorizontalFlip(),
@@ -115,10 +122,10 @@ def get_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    shuffle=True,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
 
         val_loader = torch.utils.data.DataLoader(datasets.ImageFolder(
-            valdir,
+            str(valdir),
             transforms.Compose([
                 transforms.Resize(int(input_size / 0.875)),
                 transforms.CenterCrop(input_size),
@@ -128,7 +135,7 @@ def get_dataset(dataset_name,
                                                  batch_size=batch_size,
                                                  shuffle=False,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
 
         n_class = 10
     else:
@@ -145,7 +152,12 @@ def get_split_train_dataset(dataset_name,
                             random_seed=1,
                             data_root='data/imagenet',
                             for_inception=False,
-                            shuffle=True):
+                            shuffle=True,
+                            device=None):
+    device = device or torch.device(
+        "cuda" if torch.cuda.is_available() else "cpu")
+    pin_memory = device.type == 'cuda'
+
     if shuffle:
         index_sampler = SubsetRandomSampler
     else:
@@ -158,13 +170,13 @@ def get_split_train_dataset(dataset_name,
 
         index_sampler = SubsetSequentialSampler
 
-    print('==> Preparing data..')
+    logger.info(f'==> Preparing data for {dataset_name}..')
     if dataset_name == 'imagenet':
 
-        traindir = os.path.join(data_root, 'train')
-        valdir = os.path.join(data_root, 'val')
-        assert os.path.exists(traindir), traindir + ' not found'
-        assert os.path.exists(valdir), valdir + ' not found'
+        traindir = Path(data_root) / 'train'
+        valdir = Path(data_root) / 'val'
+        assert traindir.exists(), f'{traindir} not found'
+        assert valdir.exists(), f'{valdir} not found'
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
 
@@ -182,8 +194,8 @@ def get_split_train_dataset(dataset_name,
             normalize,
         ])
 
-        trainset = datasets.ImageFolder(traindir, train_transform)
-        valset = datasets.ImageFolder(traindir, test_transform)
+        trainset = datasets.ImageFolder(str(traindir), train_transform)
+        valset = datasets.ImageFolder(str(traindir), test_transform)
 
         n_train = len(trainset)
         indices = list(range(n_train))
@@ -194,7 +206,7 @@ def get_split_train_dataset(dataset_name,
         train_idx, val_idx = indices[val_size:], indices[:val_size]
         if train_size:
             train_idx = train_idx[:train_size]
-        print('Data: train: {}, val: {}'.format(len(train_idx), len(val_idx)))
+        logger.info(f'Data: train: {len(train_idx)}, val: {len(val_idx)}')
 
         train_sampler = index_sampler(train_idx)
         val_sampler = index_sampler(val_idx)
@@ -203,19 +215,19 @@ def get_split_train_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    sampler=train_sampler,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
         val_loader = torch.utils.data.DataLoader(valset,
                                                  batch_size=batch_size,
                                                  sampler=val_sampler,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
         n_class = 1000
     elif dataset_name == 'imagenet100':
 
-        traindir = os.path.join(data_root, 'train')
-        valdir = os.path.join(data_root, 'val')
-        assert os.path.exists(traindir), traindir + ' not found'
-        assert os.path.exists(valdir), valdir + ' not found'
+        traindir = Path(data_root) / 'train'
+        valdir = Path(data_root) / 'val'
+        assert traindir.exists(), f'{traindir} not found'
+        assert valdir.exists(), f'{valdir} not found'
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
 
@@ -233,8 +245,8 @@ def get_split_train_dataset(dataset_name,
             normalize,
         ])
 
-        trainset = datasets.ImageFolder(traindir, train_transform)
-        valset = datasets.ImageFolder(traindir, test_transform)
+        trainset = datasets.ImageFolder(str(traindir), train_transform)
+        valset = datasets.ImageFolder(str(traindir), test_transform)
 
         n_train = len(trainset)
         indices = list(range(n_train))
@@ -245,7 +257,7 @@ def get_split_train_dataset(dataset_name,
         train_idx, val_idx = indices[val_size:], indices[:val_size]
         if train_size:
             train_idx = train_idx[:train_size]
-        print('Data: train: {}, val: {}'.format(len(train_idx), len(val_idx)))
+        logger.info(f'Data: train: {len(train_idx)}, val: {len(val_idx)}')
 
         train_sampler = index_sampler(train_idx)
         val_sampler = index_sampler(val_idx)
@@ -254,12 +266,12 @@ def get_split_train_dataset(dataset_name,
                                                    batch_size=batch_size,
                                                    sampler=train_sampler,
                                                    num_workers=n_worker,
-                                                   pin_memory=True)
+                                                   pin_memory=pin_memory)
         val_loader = torch.utils.data.DataLoader(valset,
                                                  batch_size=batch_size,
                                                  sampler=val_sampler,
                                                  num_workers=n_worker,
-                                                 pin_memory=True)
+                                                 pin_memory=pin_memory)
         n_class = 100
     else:
         raise NotImplementedError

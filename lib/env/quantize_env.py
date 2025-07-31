@@ -13,8 +13,9 @@ import torch.optim as optim
 from progress.bar import Bar
 
 from lib.utils.data_utils import get_split_train_dataset
+from lib.utils.logger import logger
 from lib.utils.quantize_utils import kmeans_update_model, quantize_model
-from lib.utils.utils import AverageMeter, accuracy, measure_model, prGreen
+from lib.utils.utils import AverageMeter, accuracy, measure_model
 
 
 class QuantizeEnv:
@@ -33,6 +34,10 @@ class QuantizeEnv:
         # default setting
         self.quantizable_layer_types = [nn.Conv2d, nn.Linear]
 
+        # set device
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+
         # save options
         self.model = model
         self.model_for_measure = deepcopy(model)
@@ -44,7 +49,7 @@ class QuantizeEnv:
                                    lr=args.finetune_lr,
                                    momentum=0.9,
                                    weight_decay=1e-5)
-        self.criterion = nn.CrossEntropyLoss().cuda()
+        self.criterion = nn.CrossEntropyLoss().to(self.device)
         self.pretrained_model = pretrained_model
         self.n_data_worker = n_data_worker
         self.batch_size = batch_size
@@ -91,12 +96,15 @@ class QuantizeEnv:
 
         # restore weight
         self.reset()
-        print(
+        logger.info(
             '=> original acc: {:.3f}% on split dataset(train: %7d, val: %7d )'.
             format(self.org_acc, self.train_size, self.val_size))
-        print('=> original #param: {:.4f}, model size: {:.4f} MB'.format(
+        logger.info('=> original #param: {:.4f}, model size: {:.4f} MB'.format(
             sum(self.wsize_list) * 1. / 1e6,
             sum(self.wsize_list) * self.float_bit / 8e6))
+
+        # move model to device
+        self.model = self.model.to(self.device)
 
     def adjust_learning_rate(self):
         for param_group in self.optimizer.param_groups:
@@ -198,7 +206,7 @@ class QuantizeEnv:
                     self.strategy[-(i + 1)] -= 1
                 if target >= self._cur_weight():
                     break
-        print('=> Final action list: {}'.format(self.strategy))
+        logger.info('=> Final action list: {}'.format(self.strategy))
 
     def _action_wall(self, action):
         assert len(self.strategy) == self.cur_ind
@@ -247,7 +255,7 @@ class QuantizeEnv:
                 self.quantizable_idx.append(i)
                 self.layer_type_list.append(type(m))
                 self.bound_list.append((self.min_bit, self.max_bit))
-        print('=> Final bound list: {}'.format(self.bound_list))
+        logger.info('=> Final bound list: {}'.format(self.bound_list))
 
     def _get_weight_size(self):
         # get the param size for each layers to prune, size expressed in number of params
@@ -308,7 +316,7 @@ class QuantizeEnv:
 
         # normalize the state
         layer_embedding = np.array(layer_embedding, 'float')
-        print('=> shape of embedding (n_layer * n_dim): {}'.format(
+        logger.info('=> shape of embedding (n_layer * n_dim): {}'.format(
             layer_embedding.shape))
         assert len(layer_embedding.shape) == 2, layer_embedding.shape
         for i in range(layer_embedding.shape[1]):
@@ -341,7 +349,8 @@ class QuantizeEnv:
         bar = Bar('train:', max=len(train_loader))
         for epoch in range(epochs):
             for i, (inputs, targets) in enumerate(train_loader):
-                input_var, target_var = inputs.cuda(), targets.cuda()
+                input_var, target_var = inputs.to(self.device), targets.to(
+                    self.device)
 
                 # measure data loading time
                 data_time.update(time.time() - end)
@@ -351,7 +360,9 @@ class QuantizeEnv:
                 loss = self.criterion(output, target_var)
 
                 # measure accuracy and record loss
-                prec1, prec5 = accuracy(output.data, target_var, topk=(1, 5))
+                prec1, prec5 = accuracy(output.detach(),
+                                        target_var,
+                                        topk=(1, 5))
                 losses.update(loss.item(), inputs.size(0))
                 top1.update(prec1.item(), inputs.size(0))
                 top5.update(prec5.item(), inputs.size(0))
@@ -399,8 +410,9 @@ class QuantizeEnv:
             self.adjust_learning_rate()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
-                  (losses.avg, top1.avg, top5.avg, t2 - t1))
+            logger.info(
+                '* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
+                (losses.avg, top1.avg, top5.avg, t2 - t1))
         return best_acc
 
     def _validate(self, val_loader, model, verbose=False):
@@ -421,14 +433,15 @@ class QuantizeEnv:
                 # measure data loading time
                 data_time.update(time.time() - end)
 
-                input_var, target_var = inputs.cuda(), targets.cuda()
+                input_var, target_var = inputs.to(self.device), targets.to(
+                    self.device)
 
                 # compute output
                 output = model(input_var)
                 loss = self.criterion(output, target_var)
 
                 # measure accuracy and record loss
-                prec1, prec5 = accuracy(output.data, target_var, topk=(1, 5))
+                prec1, prec5 = accuracy(output, target_var, topk=(1, 5))
                 losses.update(loss.item(), inputs.size(0))
                 top1.update(prec1.item(), inputs.size(0))
                 top5.update(prec5.item(), inputs.size(0))
@@ -455,8 +468,9 @@ class QuantizeEnv:
             bar.finish()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
-                  (losses.avg, top1.avg, top5.avg, t2 - t1))
+            logger.info(
+                '* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
+                (losses.avg, top1.avg, top5.avg, t2 - t1))
         if self.use_top5:
             return top5.avg
         else:

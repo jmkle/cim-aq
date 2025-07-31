@@ -6,16 +6,21 @@ import math
 import os
 import time
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from progress.bar import Bar
+from torch.amp.autocast_mode import autocast
+from torch.amp.grad_scaler import GradScaler
+from tqdm import tqdm
 
 from lib.utils.data_utils import get_split_train_dataset
+from lib.utils.logger import logger
 from lib.utils.quantize_utils import QConv2d, QLinear, calibrate
-from lib.utils.utils import AverageMeter, accuracy, measure_model, prGreen
+from lib.utils.utils import AverageMeter, accuracy, measure_model
 
 
 class LinearQuantizeEnv:
@@ -34,6 +39,11 @@ class LinearQuantizeEnv:
         # default setting
         self.quantizable_layer_types = [QConv2d, QLinear]
 
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
+        # Set device
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
+
         # save options
         self.model = model
         self.model_for_measure = deepcopy(model)
@@ -46,7 +56,7 @@ class LinearQuantizeEnv:
                                    lr=args.finetune_lr,
                                    momentum=0.9,
                                    weight_decay=1e-5)
-        self.criterion = nn.CrossEntropyLoss().cuda()
+        self.criterion = nn.CrossEntropyLoss().to(self.device)
         self.pretrained_model = pretrained_model
         self.n_data_worker = n_data_worker
         self.batch_size = batch_size
@@ -60,6 +70,12 @@ class LinearQuantizeEnv:
         self.finetune_lr = args.finetune_lr
         self.finetune_flag = args.finetune_flag
         self.finetune_epoch = args.finetune_epoch
+        self.amp = args.amp
+
+        # Initialize AMP scaler if enabled
+        self.scaler = None
+        if self.amp:
+            self.scaler = GradScaler()
 
         # options from args
         self.min_bit = args.min_bit
@@ -84,6 +100,7 @@ class LinearQuantizeEnv:
         self.n_quantizable_layer = len(self.quantizable_idx)
 
         self.model.load_state_dict(self.pretrained_model, strict=True)
+        self.model = self.model.to(self.device)
         # self.org_acc = self._validate(self.val_loader, self.model)
         self.org_acc = self._validate(self.train_loader, self.model)
         # build embedding (static part), same as pruning
@@ -100,10 +117,10 @@ class LinearQuantizeEnv:
 
         # restore weight
         self.reset()
-        print(
-            '=> original acc: {:.3f}% on split dataset(train: %7d, val: %7d )'.
-            format(self.org_acc, self.train_size, self.val_size))
-        print('=> original cost: {:.4f}'.format(self._org_cost()))
+        logger.info(
+            f'=> original acc: {self.org_acc:.4f}% on split dataset(train: {self.train_size:7d}, val: {self.val_size:7d})'
+        )
+        logger.info(f'=> original cost: {self._org_cost():.4f}')
 
     def adjust_learning_rate(self):
         for param_group in self.optimizer.param_groups:
@@ -152,9 +169,13 @@ class LinearQuantizeEnv:
 
             if reward > self.best_reward:
                 self.best_reward = reward
-                prGreen(
-                    'New best policy: {}, reward: {:.3f}, acc: {:.3f}, cost_ratio: {:.3f}'
-                    .format(self.strategy, self.best_reward, acc, cost_ratio))
+                logger.info(
+                    f'New best policy: {self.quantization_strategy}, reward: {self.best_reward:.4f}, acc: {acc:.4f}, cost_ratio: {cost_ratio:.4f}'
+                )
+            else:
+                logger.warning(
+                    f'No better policy found: {self.quantization_strategy}, reward: {reward:.4f}, acc: {acc:.4f}, cost_ratio: {cost_ratio:.4f}'
+                )
 
             obs = self.layer_embedding[
                 self.cur_ind, :].copy()  # actually the same as the last state
@@ -190,6 +211,7 @@ class LinearQuantizeEnv:
     def reset(self):
         # restore env by loading the pretrained model
         self.model.load_state_dict(self.pretrained_model, strict=False)
+        self.model = self.model.to(self.device)
         self.optimizer = optim.SGD(self.model.parameters(),
                                    lr=self.finetune_lr,
                                    momentum=0.9,
@@ -209,8 +231,9 @@ class LinearQuantizeEnv:
             min_cost += self.cost_lookuptable[i][int(self.min_bit -
                                                      1)][int(self.min_bit - 1)]
 
-        print('before action_wall: ', self.strategy, min_cost,
-              self._cur_cost())
+        logger.debug(
+            f'before action_wall: {self.strategy}, min_cost: {min_cost}, current_cost: {self._cur_cost()}'
+        )
         while min_cost < self._cur_cost() and target < self._cur_cost():
             # print('current: ', self.strategy, min_cost, self._cur_cost())
             for i, n_bit in enumerate(reversed(self.strategy)):
@@ -224,7 +247,9 @@ class LinearQuantizeEnv:
                 self._keep_first_last_layer()
                 if target >= self._cur_cost():
                     break
-        print('after action_wall: ', self.strategy, min_cost, self._cur_cost())
+        logger.debug(
+            f'after action_wall: {self.strategy}, min_cost: {min_cost}, current_cost: {self._cur_cost()}'
+        )
 
     def _keep_first_last_layer(self):
         self.strategy[0][0] = 8
@@ -301,7 +326,9 @@ class LinearQuantizeEnv:
             if type(m) in self.quantizable_layer_types:
                 self.quantizable_idx.append(i)
                 self.bound_list.append((self.min_bit, self.max_bit))
-        print('=> Final bound list: {}'.format(self.bound_list))
+        logger.info(f'=> Final bound list: {self.bound_list}')
+        logger.info(
+            f'=> Total quantizable components: {len(self.quantizable_idx)}')
 
     def _build_state_embedding(self):
         # measure model for cifar 32x32 input
@@ -341,7 +368,7 @@ class LinearQuantizeEnv:
 
         # normalize the state
         layer_embedding = np.array(layer_embedding, 'float')
-        print('=> shape of embedding (n_layer * n_dim): {}'.format(
+        logger.info('=> shape of embedding (n_layer * n_dim): {}'.format(
             layer_embedding.shape))
         assert len(layer_embedding.shape) == 2, layer_embedding.shape
         for i in range(layer_embedding.shape[1]):
@@ -356,18 +383,18 @@ class LinearQuantizeEnv:
     def _get_lookuptable(self):
 
         lookup_table_folder = 'lib/simulator/lookup_tables/'
-        os.makedirs(lookup_table_folder, exist_ok=True)
+        Path(lookup_table_folder).mkdir(parents=True, exist_ok=True)
         if self.cost_mode == 'cloud_latency':
-            fname = lookup_table_folder + self.model_name + '_' + self.data_type \
+            fname = lookup_table_folder + self.arch + '_' + self.data_type \
                     + '_batch' + str(self.simulator_batch) + '_latency_table.npy'
         else:
             # add your own cost lookuptable here
             raise NotImplementedError
 
-        if os.path.isfile(fname):
-            print('load latency table : ', fname)
+        if Path(fname).is_file():
+            logger.info(f'load latency table : {fname}')
             latency_list = np.load(fname)
-            print(latency_list)
+            logger.debug(f'Latency table contents: {latency_list}')
         else:
             # you can put your own simulator/lookuptable here
             raise NotImplementedError
@@ -385,52 +412,53 @@ class LinearQuantizeEnv:
         model.train()
         end = time.time()
         t1 = time.time()
-        bar = Bar('train:', max=len(train_loader))
+
         for epoch in range(epochs):
-            for i, (inputs, targets) in enumerate(train_loader):
-                input_var, target_var = inputs.cuda(), targets.cuda()
+            pbar = tqdm(train_loader, desc=f'Train Epoch {epoch+1}/{epochs}')
+            for inputs, targets in pbar:
+                input_var, target_var = inputs.to(self.device), targets.to(
+                    self.device)
 
                 # measure data loading time
                 data_time.update(time.time() - end)
 
+                self.optimizer.zero_grad()
+
                 # compute output
-                output = model(input_var)
-                loss = self.criterion(output, target_var)
+                with autocast(device_type=self.device.type, enabled=self.amp):
+                    output = model(input_var)
+                    loss = self.criterion(output, target_var)
 
                 # measure accuracy and record loss
-                prec1, prec5 = accuracy(output.data, target_var, topk=(1, 5))
+                prec1, prec5 = accuracy(output.detach(),
+                                        target_var,
+                                        topk=(1, 5))
                 losses.update(loss.item(), inputs.size(0))
                 top1.update(prec1.item(), inputs.size(0))
                 top5.update(prec5.item(), inputs.size(0))
 
                 # compute gradient
-                self.optimizer.zero_grad()
-                loss.backward()
-
-                # do SGD step
-                self.optimizer.step()
+                if self.amp and self.scaler:
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss.backward()
+                    # do SGD step
+                    self.optimizer.step()
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
                 end = time.time()
 
-                # plot progress
-                if i % 1 == 0:
-                    bar.suffix = \
-                        '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
-                        'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                            batch=i + 1,
-                            size=len(train_loader),
-                            data=data_time.val,
-                            bt=batch_time.val,
-                            total=bar.elapsed_td,
-                            eta=bar.eta_td,
-                            loss=losses.avg,
-                            top1=top1.avg,
-                            top5=top5.avg,
-                        )
-                    bar.next()
-            bar.finish()
+                # update progress bar
+                pbar.set_postfix({
+                    'Loss': f'{losses.avg:.4f}',
+                    'Top1': f'{top1.avg:.4f}',
+                    'Top5': f'{top5.avg:.4f}',
+                    'Data': f'{data_time.val:.4f}s',
+                    'Batch': f'{batch_time.val:.4f}s'
+                })
 
             if self.use_top5:
                 if top5.avg > best_acc:
@@ -441,8 +469,9 @@ class LinearQuantizeEnv:
             self.adjust_learning_rate()
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
-                  (losses.avg, top1.avg, top5.avg, t2 - t1))
+            logger.info(
+                f'* Test loss: {losses.avg:.4f}  top1: {top1.avg:.4f}  top5: {top5.avg:.4f}  time: {t2 - t1:.4f}'
+            )
         return best_acc
 
     def _validate(self, val_loader, model, verbose=False):
@@ -458,19 +487,20 @@ class LinearQuantizeEnv:
             model.eval()
 
             end = time.time()
-            bar = Bar('valid:', max=len(val_loader))
-            for i, (inputs, targets) in enumerate(val_loader):
+            pbar = tqdm(val_loader, desc='Validation')
+            for inputs, targets in pbar:
                 # measure data loading time
                 data_time.update(time.time() - end)
 
-                input_var, target_var = inputs.cuda(), targets.cuda()
+                input_var, target_var = inputs.to(self.device), targets.to(
+                    self.device)
 
                 # compute output
                 output = model(input_var)
                 loss = self.criterion(output, target_var)
 
                 # measure accuracy and record loss
-                prec1, prec5 = accuracy(output.data, target_var, topk=(1, 5))
+                prec1, prec5 = accuracy(output, target_var, topk=(1, 5))
                 losses.update(loss.item(), inputs.size(0))
                 top1.update(prec1.item(), inputs.size(0))
                 top5.update(prec5.item(), inputs.size(0))
@@ -478,27 +508,21 @@ class LinearQuantizeEnv:
                 # measure elapsed time
                 batch_time.update(time.time() - end)
                 end = time.time()
-                # plot progress
-                if i % 1 == 0:
-                    bar.suffix = \
-                        '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | ' \
-                        'Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-                            batch=i + 1,
-                            size=len(val_loader),
-                            data=data_time.avg,
-                            bt=batch_time.avg,
-                            total=bar.elapsed_td,
-                            eta=bar.eta_td,
-                            loss=losses.avg,
-                            top1=top1.avg,
-                            top5=top5.avg,
-                        )
-                    bar.next()
-            bar.finish()
+
+                # update progress bar
+                pbar.set_postfix({
+                    'Loss': f'{losses.avg:.4f}',
+                    'Top1': f'{top1.avg:.4f}',
+                    'Top5': f'{top5.avg:.4f}',
+                    'Data': f'{data_time.avg:.4f}s',
+                    'Batch': f'{batch_time.avg:.4f}s'
+                })
+
         t2 = time.time()
         if verbose:
-            print('* Test loss: %.3f  top1: %.3f  top5: %.3f  time: %.3f' %
-                  (losses.avg, top1.avg, top5.avg, t2 - t1))
+            logger.info(
+                f'* Test loss: {losses.avg:.4f}  top1: {top1.avg:.4f}  top5: {top5.avg:.4f}  time: {t2 - t1:.4f}'
+            )
         if self.use_top5:
             return top5.avg
         else:

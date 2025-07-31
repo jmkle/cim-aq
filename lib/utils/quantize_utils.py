@@ -14,6 +14,8 @@ from sklearn.cluster import KMeans
 from torch.nn.modules.utils import _pair, _single, _triple
 from torch.nn.parameter import Parameter
 
+from lib.utils.logger import logger
+
 
 def k_means_cpu(weight, n_clusters, init='k-means++', max_iter=50):
     # flatten the weight for computing k-means
@@ -31,12 +33,14 @@ def k_means_cpu(weight, n_clusters, init='k-means++', max_iter=50):
     centroids = k_means.cluster_centers_
     labels = k_means.labels_
     labels = labels.reshape(org_shape)
-    return torch.from_numpy(centroids).cuda().view(
-        1, -1), torch.from_numpy(labels).int().cuda()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.from_numpy(centroids).to(device).view(
+        1, -1), torch.from_numpy(labels).int().to(device)
 
 
 def reconstruct_weight_from_k_means_result(centroids, labels):
-    weight = torch.zeros_like(labels).float().cuda()
+    device = labels.device
+    weight = torch.zeros_like(labels).float().to(device)
     for i, c in enumerate(centroids.cpu().numpy().squeeze()):
         weight[labels == i] = c.item()
     return weight
@@ -81,7 +85,7 @@ def quantize_model(model,
             w = layer.weight.data
             if is_pruned:
                 nz_mask = w.ne(0)
-                print('*** pruned density: {:.4f}'.format(
+                logger.info('*** pruned density: {:.4f}'.format(
                     torch.sum(nz_mask) / w.numel()))
                 ori_shape = w.size()
                 w = w[nz_mask]
@@ -283,7 +287,7 @@ class QModule(nn.Module):
             if self._calibrate:
                 if self._a_bit < 5:
                     threshold = self._compute_threshold(
-                        inputs.data.cpu().numpy(), self._a_bit)
+                        inputs.detach().cpu().numpy(), self._a_bit)
                     estimate_activation_range = min(
                         min(self.init_range,
                             inputs.abs().max().item()), threshold)
@@ -335,7 +339,7 @@ class QModule(nn.Module):
             if self._calibrate:
                 if self._w_bit < 5:
                     threshold = self._compute_threshold(
-                        weight.data.cpu().numpy(), self._w_bit)
+                        weight.detach().cpu().numpy(), self._w_bit)
                 else:
                     threshold = weight.abs().max().item()
                 self.weight_range.data[0] = threshold
@@ -363,9 +367,9 @@ class QModule(nn.Module):
             if self._calibrate:
                 return bias
             ori_b = bias
-            threshold = ori_b.data.max().item() + 0.00001
+            threshold = ori_b.abs().max().item() + 0.00001
             scaling_factor = threshold / (pow(2., self._b_bit - 1) - 1.)
-            b = torch.clamp(ori_b.data, -threshold, threshold)
+            b = torch.clamp(ori_b, -threshold, threshold)
             b.div_(scaling_factor).round_().mul_(scaling_factor)
             # STE
             if self._fix_weight:
@@ -521,26 +525,26 @@ def calibrate(model, loader):
     if hasattr(model, 'module'):
         data_parallel_flag = True
         model = model.module
-    print('\n==> start calibrate')
+    logger.info('\n==> start calibrate')
     for name, module in model.named_modules():
         if isinstance(module, QModule):
             module.set_calibrate(calibrate=True)
     inputs, _ = next(iter(loader))
-    # use 1 gpu to calibrate
-    inputs = inputs.to('cuda:0', non_blocking=True)
+    device = next(model.parameters()).device
+    inputs = inputs.to(device, non_blocking=True)
     with torch.no_grad():
         model(inputs)
     for name, module in model.named_modules():
         if isinstance(module, QModule):
             module.set_calibrate(calibrate=False)
-    print('==> end calibrate')
+    logger.info('==> end calibrate')
     if data_parallel_flag:
         model = nn.DataParallel(model)
     return model
 
 
 def dorefa(model):
-    print('\n==> set weight tanh')
+    logger.info('\n==> set weight tanh')
     for name, module in model.named_modules():
         if isinstance(module, QModule):
             module.set_tanh(tanh=True)
@@ -548,7 +552,7 @@ def dorefa(model):
 
 def set_fix_weight(model, fix_weight=True):
     if fix_weight:
-        print('\n==> set weight fixed')
+        logger.info('\n==> set weight fixed')
     for name, module in model.named_modules():
         if isinstance(module, QModule):
             module.set_fix_weight(fix_weight=fix_weight)
