@@ -199,8 +199,6 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
         data_time.update(time.time() - end)
 
         inputs, targets = inputs.to(device), targets.to(device)
-        inputs, targets = torch.autograd.Variable(
-            inputs), torch.autograd.Variable(targets)
 
         # compute output
         outputs = model(inputs)
@@ -268,8 +266,6 @@ def test(val_loader, model, criterion, epoch, device):
             data_time.update(time.time() - end)
 
             inputs, targets = inputs.to(device), targets.to(device)
-            inputs, targets = torch.autograd.Variable(
-                inputs, volatile=True), torch.autograd.Variable(targets)
 
             # compute output
             outputs = model(inputs)
