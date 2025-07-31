@@ -34,6 +34,7 @@ Current code base is tested under following environment:
 - Python 3.11.2
 - PyTorch 2.7.1
 - torchvision 0.22.1
+- SciPy 1.16.1
 - TensorBoard 2.20.0
 - tqdm 4.67.1
 - W&B 0.21.0
@@ -193,6 +194,7 @@ cd utils && python format.py --fix
 See `requirements.txt` for up-to-date dependencies. Main requirements:
 
 ```shell
+scipy>=1.16.1
 tensorboard>=2.20.0
 torch>=2.7.1
 torchvision>=0.22.1

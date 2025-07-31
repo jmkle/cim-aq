@@ -14,7 +14,6 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
-import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
 import wandb
@@ -131,19 +130,6 @@ parser.add_argument('--pretrained',
                     action='store_true',
                     help='use pretrained model')
 # Quantization
-parser.add_argument('--linear_quantization',
-                    dest='linear_quantization',
-                    action='store_true',
-                    help='quantize both weight and activation)')
-parser.add_argument('--free_high_bit',
-                    default=True,
-                    type=bool,
-                    help='free the high bit (>6)')
-parser.add_argument('--amp', action='store_true', help='use amp')
-parser.add_argument('--half_type',
-                    default='O1',
-                    type=str,
-                    help='half type: O0/O1/O2/O3')
 parser.add_argument('--strategy_file',
                     required=True,
                     type=str,
@@ -157,6 +143,7 @@ parser.add_argument('--arch',
                     help='model architecture:' + ' | '.join(model_names) +
                     ' (default: resnet50)')
 # Miscs
+parser.add_argument('--amp', action='store_true', help='use amp')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 parser.add_argument('-e',
                     '--evaluate',
@@ -257,12 +244,6 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
         losses.update(loss.item(), inputs.size(0))
         top1.update(prec1.item(), inputs.size(0))
         top5.update(prec5.item(), inputs.size(0))
-
-        if not args.linear_quantization:
-            kmeans_update_model(model,
-                                quantizable_idx,
-                                centroid_label_dict,
-                                free_high_bit=args.free_high_bit)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -391,43 +372,25 @@ if __name__ == '__main__':
                           momentum=args.momentum,
                           weight_decay=args.weight_decay)
 
-    if args.linear_quantization:
-        quantizable_idx = []
-        for i, m in enumerate(model.modules()):
-            if type(m) in [QConv2d, QLinear]:
-                quantizable_idx.append(i)
-        # print(model)
-        main_logger.info(quantizable_idx)
+    quantizable_idx = []
+    for i, m in enumerate(model.modules()):
+        if type(m) in [QConv2d, QLinear]:
+            quantizable_idx.append(i)
+    # print(model)
+    main_logger.info(quantizable_idx)
 
-        quantize_layer_bit_dict = {
-            n: b
-            for n, b in zip(quantizable_idx, quantization_strategy)
-        }
-        for i, layer in enumerate(model.modules()):
-            if i not in quantizable_idx:
-                continue
-            else:
-                layer.w_bit = quantize_layer_bit_dict[i][0]
-                layer.a_bit = quantize_layer_bit_dict[i][1]
-        model = model.to(device)
-        model = calibrate(model, train_loader)
-    else:
-        quantizable_idx = []
-        for i, m in enumerate(model.modules()):
-            if type(m) in [nn.Conv2d, nn.Linear]:
-                quantizable_idx.append(i)
-        main_logger.info(quantizable_idx)
-
-
-        assert len(quantizable_idx) == len(quantization_strategy), \
-            'You should provide the same number of bit setting as layer list for weight quantization!'
-        centroid_label_dict = quantize_model(model,
-                                             quantizable_idx,
-                                             quantization_strategy,
-                                             mode='cpu',
-                                             quantize_bias=False,
-                                             centroids_init='k-means++',
-                                             max_iter=50)
+    quantize_layer_bit_dict = {
+        n: b
+        for n, b in zip(quantizable_idx, quantization_strategy)
+    }
+    for i, layer in enumerate(model.modules()):
+        if i not in quantizable_idx:
+            continue
+        else:
+            layer.w_bit = quantize_layer_bit_dict[i][0]
+            layer.a_bit = quantize_layer_bit_dict[i][1]
+    model = model.to(device)
+    model = calibrate(model, train_loader)
 
     if torch.cuda.device_count() > 1:
         if (args.arch.startswith('alexnet') or args.arch.startswith('vgg')
@@ -496,18 +459,6 @@ if __name__ == '__main__':
     # Train and val
     for epoch in range(start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
-        # if args.free_high_bit and args.epochs - epoch < args.epochs // 10:
-        if args.free_high_bit and epoch == args.epochs - 1 and (
-                not args.linear_quantization):
-            # quantize the high bit layers only at last epoch to save time
-            centroid_label_dict = quantize_model(model,
-                                                 quantizable_idx,
-                                                 strategy,
-                                                 mode='cpu',
-                                                 quantize_bias=False,
-                                                 centroids_init='k-means++',
-                                                 max_iter=50,
-                                                 free_high_bit=False)
 
         main_logger.info(
             f'\nEpoch: [{epoch + 1} | {args.epochs}] LR: {lr_current:f}')

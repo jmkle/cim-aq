@@ -97,8 +97,6 @@ class DDPG(object):
         # Create replay buffer
         self.memory = SequentialMemory(limit=args.rmsize,
                                        window_length=args.window_length)
-        # self.random_process = OrnsteinUhlenbeckProcess(size=nb_actions, theta=args.ou_theta, mu=args.ou_mu,
-        #                                                sigma=args.ou_sigma)
 
         # Hyper-parameters
         self.batch_size = args.bsize
@@ -119,11 +117,8 @@ class DDPG(object):
 
         #
         self.epsilon = 1.0
-        # self.s_t = None  # Most recent state
-        # self.a_t = None  # Most recent action
         self.is_training = True
 
-        #
         self.to(device)
 
         # moving average baseline
@@ -143,8 +138,6 @@ class DDPG(object):
             self.moving_average += self.moving_alpha * (batch_mean_reward -
                                                         self.moving_average)
         reward_batch -= self.moving_average
-        # if reward_batch.std() > 0:
-        #     reward_batch /= reward_batch.std()
 
         # Prepare for the target q batch
         with torch.no_grad():
@@ -209,7 +202,6 @@ class DDPG(object):
         return action
 
     def select_action(self, s_t, episode, decay_epsilon=True):
-        # assert episode >= self.warmup, 'Episode: {} warmup: {}'.format(episode, self.warmup)
         action = to_numpy(self.actor(to_tensor(np.array(s_t).reshape(
             1, -1)))).squeeze(0)
 
@@ -227,13 +219,7 @@ class DDPG(object):
         action = np.clip(action, self.lbound, self.rbound)
         # update for log
         self.delta = delta
-        # self.a_t = action
         return action
-
-    def reset(self, obs):
-        pass
-        # self.s_t = obs
-        # self.random_process.reset_states()
 
     def load_weights(self, output):
         if output is None: return

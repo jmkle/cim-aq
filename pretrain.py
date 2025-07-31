@@ -13,7 +13,6 @@ from pathlib import Path
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
-import torch.nn.parallel
 import torch.optim as optim
 import torchvision.models as models
 import wandb
@@ -127,12 +126,6 @@ parser.add_argument('--resume',
 parser.add_argument('--pretrained',
                     action='store_true',
                     help='use pretrained model')
-# Quantization
-parser.add_argument('--amp', action='store_true', help='use amp')
-parser.add_argument('--half_type',
-                    default='O1',
-                    type=str,
-                    help='half type: O0/O1/O2/O3')
 # Architecture
 parser.add_argument('--arch',
                     '-a',
@@ -142,6 +135,7 @@ parser.add_argument('--arch',
                     help='model architecture:' + ' | '.join(model_names) +
                     ' (default: resnet50)')
 # Miscs
+parser.add_argument('--amp', action='store_true', help='use amp')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 parser.add_argument('-e',
                     '--evaluate',

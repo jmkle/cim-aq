@@ -6,8 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.parallel
-import torch.optim
 import torch.utils.data
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms

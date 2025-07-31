@@ -18,7 +18,6 @@ from tqdm import tqdm
 
 import models as customized_models
 from lib.env.linear_quantize_env import LinearQuantizeEnv
-from lib.env.quantize_env import QuantizeEnv
 from lib.rl.ddpg import DDPG
 from lib.utils.logger import logger
 
@@ -94,7 +93,6 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
         # reset if it is the start of episode
         if observation is None:
             observation = deepcopy(env.reset())
-            agent.reset(observation)
 
         # agent pick action ...
         if episode <= args.warmup:
@@ -363,10 +361,6 @@ if __name__ == "__main__":
                         default=32,
                         type=int,
                         help='the bit of full precision float')
-    parser.add_argument('--linear_quantization',
-                        dest='linear_quantization',
-                        action='store_true')
-    parser.add_argument('--is_pruned', dest='is_pruned', action='store_true')
     # ddpg
     parser.add_argument('--hidden1',
                         default=300,
@@ -389,7 +383,10 @@ if __name__ == "__main__":
         default=20,
         type=int,
         help='time without training but only filling the replay memory')
-    parser.add_argument('--discount', default=1., type=float, help='')
+    parser.add_argument('--discount',
+                        default=1.,
+                        type=float,
+                        help='discount factor for ddpg agent')
     parser.add_argument('--bsize', default=64, type=int, help='minibatch size')
     parser.add_argument('--rmsize',
                         default=128,
@@ -415,7 +412,6 @@ if __name__ == "__main__":
                         type=int,
                         help='number of rl to update each time')
     # training
-    parser.add_argument('--max_episode_length', default=1e9, type=int, help='')
     parser.add_argument('--output',
                         default=str((Path(__file__).resolve().parent /
                                      'save').absolute()),
@@ -483,7 +479,6 @@ if __name__ == "__main__":
                         default='1',
                         type=str,
                         help='id(s) for CUDA_VISIBLE_DEVICES')
-
     # W&B options
     parser.add_argument('--wandb_enable',
                         action='store_true',
@@ -533,7 +528,8 @@ if __name__ == "__main__":
     elif args.dataset == 'imagenet100':
         num_classes = 100
     else:
-        raise NotImplementedError
+        raise NotImplementedError(f"Unsupported dataset: {args.dataset}")
+    
     model = models.__dict__[args.arch](pretrained=True,
                                        num_classes=num_classes)
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
@@ -554,28 +550,15 @@ if __name__ == "__main__":
     logger.info(f'==> Preserve ratio: {args.preserve_ratio}')
     logger.info(f'==> Min bit: {args.min_bit}, Max bit: {args.max_bit}')
 
-    if args.linear_quantization:
-        env = LinearQuantizeEnv(model,
-                                pretrained_model,
-                                args.dataset,
-                                args.dataset_root,
-                                compress_ratio=args.preserve_ratio,
-                                n_data_worker=args.n_worker,
-                                batch_size=args.data_bsize,
-                                args=args,
-                                float_bit=args.float_bit,
-                                is_model_pruned=args.is_pruned)
-    else:
-        env = QuantizeEnv(model,
-                          pretrained_model,
-                          args.dataset,
-                          args.dataset_root,
-                          compress_ratio=args.preserve_ratio,
-                          n_data_worker=args.n_worker,
-                          batch_size=args.data_bsize,
-                          args=args,
-                          float_bit=args.float_bit,
-                          is_model_pruned=args.is_pruned)
+    env = LinearQuantizeEnv(model,
+                            pretrained_model,
+                            args.dataset,
+                            args.dataset_root,
+                            compress_ratio=args.preserve_ratio,
+                            n_data_worker=args.n_worker,
+                            batch_size=args.data_bsize,
+                            args=args,
+                            float_bit=args.float_bit)
 
     nb_states = env.layer_embedding.shape[1]
     nb_actions = 1  # actions for weight and activation quantization
