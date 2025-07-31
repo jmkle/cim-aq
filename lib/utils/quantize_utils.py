@@ -14,6 +14,8 @@ from sklearn.cluster import KMeans
 from torch.nn.modules.utils import _pair, _single, _triple
 from torch.nn.parameter import Parameter
 
+from lib.utils.logger import logger
+
 
 def k_means_cpu(weight, n_clusters, init='k-means++', max_iter=50):
     # flatten the weight for computing k-means
@@ -83,7 +85,7 @@ def quantize_model(model,
             w = layer.weight.data
             if is_pruned:
                 nz_mask = w.ne(0)
-                print('*** pruned density: {:.4f}'.format(
+                logger.info('*** pruned density: {:.4f}'.format(
                     torch.sum(nz_mask) / w.numel()))
                 ori_shape = w.size()
                 w = w[nz_mask]
@@ -523,7 +525,7 @@ def calibrate(model, loader):
     if hasattr(model, 'module'):
         data_parallel_flag = True
         model = model.module
-    print('\n==> start calibrate')
+    logger.info('\n==> start calibrate')
     for name, module in model.named_modules():
         if isinstance(module, QModule):
             module.set_calibrate(calibrate=True)
@@ -535,14 +537,14 @@ def calibrate(model, loader):
     for name, module in model.named_modules():
         if isinstance(module, QModule):
             module.set_calibrate(calibrate=False)
-    print('==> end calibrate')
+    logger.info('==> end calibrate')
     if data_parallel_flag:
         model = nn.DataParallel(model)
     return model
 
 
 def dorefa(model):
-    print('\n==> set weight tanh')
+    logger.info('\n==> set weight tanh')
     for name, module in model.named_modules():
         if isinstance(module, QModule):
             module.set_tanh(tanh=True)
@@ -550,7 +552,7 @@ def dorefa(model):
 
 def set_fix_weight(model, fix_weight=True):
     if fix_weight:
-        print('\n==> set weight fixed')
+        logger.info('\n==> set weight fixed')
     for name, module in model.named_modules():
         if isinstance(module, QModule):
             module.set_fix_weight(fix_weight=fix_weight)

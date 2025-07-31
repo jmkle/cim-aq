@@ -21,9 +21,10 @@ from torch.utils.tensorboard import SummaryWriter
 
 import models as customized_models
 from lib.utils.data_utils import get_dataset
+from lib.utils.logger import logger as main_logger
 from lib.utils.quantize_utils import (QConv2d, QLinear, calibrate,
                                       kmeans_update_model, quantize_model)
-from lib.utils.utils import AverageMeter, Logger, accuracy
+from lib.utils.utils import AverageMeter, MetricsLogger, accuracy
 
 # Models
 default_model_names = sorted(name for name in models.__dict__
@@ -369,10 +370,11 @@ if __name__ == '__main__':
         data_root=args.data)
 
     model = models.__dict__[args.arch](pretrained=args.pretrained)
-    print("=> creating model '{}'".format(args.arch), ' pretrained is ',
-          args.pretrained)
-    print('    Total params: %.2fM' %
-          (sum(p.numel() for p in model.parameters()) / 1000000.0))
+    main_logger.info(
+        f"=> created model '{args.arch}' pretrained is {args.pretrained}")
+    main_logger.info(
+        f'    Total params: {sum(p.numel() for p in model.parameters()) / 1000000.0:.4f}M'
+    )
     cudnn.benchmark = True
 
     # define loss function (criterion) and optimizer
@@ -388,7 +390,7 @@ if __name__ == '__main__':
             if type(m) in [QConv2d, QLinear]:
                 quantizable_idx.append(i)
         # print(model)
-        print(quantizable_idx)
+        main_logger.info(quantizable_idx)
 
         if 'mobilenetv2' in args.arch:
             strategy = [[8, -1], [7, 7], [5, 6], [4, 6], [5, 6], [5, 7],
@@ -402,7 +404,7 @@ if __name__ == '__main__':
         else:
             raise NotImplementedError
 
-        print(strategy)
+        main_logger.info(strategy)
         quantize_layer_bit_dict = {
             n: b
             for n, b in zip(quantizable_idx, strategy)
@@ -420,7 +422,7 @@ if __name__ == '__main__':
         for i, m in enumerate(model.modules()):
             if type(m) in [nn.Conv2d, nn.Linear]:
                 quantizable_idx.append(i)
-        print(quantizable_idx)
+        main_logger.info(quantizable_idx)
 
         if args.arch.startswith('resnet50'):
             # resnet50 ratio 10%
@@ -432,7 +434,7 @@ if __name__ == '__main__':
         else:
             # you can put your own strategy here
             raise NotImplementedError
-        print('strategy for ' + args.arch + ': ', strategy)
+        main_logger.info('strategy for ' + args.arch + ': ', strategy)
 
         assert len(quantizable_idx) == len(strategy), \
             'You should provide the same number of bit setting as layer list for weight quantization!'
@@ -454,30 +456,31 @@ if __name__ == '__main__':
     title = 'ImageNet-' + args.arch
     if args.resume:
         # Load checkpoint.
-        print('==> Resuming from checkpoint..')
+        main_logger.info('==> Resuming from checkpoint..')
         assert os.path.isfile(
             args.resume), 'Error: no checkpoint directory found!'
         args.checkpoint = os.path.dirname(args.resume)
         checkpoint = torch.load(args.resume, map_location=device)
         best_acc = checkpoint['best_acc']
-        print(best_acc)
+        main_logger.info(f'Previous best accuracy: {best_acc}')
         start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['state_dict'], strict=False)
         model.to(device)
         optimizer.load_state_dict(checkpoint['optimizer'])
         if os.path.isfile(os.path.join(args.checkpoint, 'log.txt')):
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
-                            title=title,
-                            resume=True)
+            logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
+                                   title=title,
+                                   resume=True)
         else:
-            logger = Logger(os.path.join(args.checkpoint, 'log.txt'),
-                            title=title)
+            logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
+                                   title=title)
             logger.set_names([
                 'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
                 'Valid Acc.'
             ])
     else:
-        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+        logger = MetricsLogger(os.path.join(args.checkpoint, 'log.txt'),
+                               title=title)
         logger.set_names([
             'Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.',
             'Valid Acc.'
@@ -487,10 +490,11 @@ if __name__ == '__main__':
     tf_writer = SummaryWriter(log_dir=os.path.join(args.checkpoint, 'logs'))
 
     if args.evaluate:
-        print('\nEvaluation only')
+        main_logger.info('\nEvaluation only')
         test_loss, test_acc = test(val_loader, model, criterion, start_epoch,
                                    device)
-        print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
+        main_logger.info(' Test Loss:  %.8f, Test Acc:  %.2f' %
+                         (test_loss, test_acc))
         exit()
 
     # Train and val
@@ -509,8 +513,8 @@ if __name__ == '__main__':
                                                  max_iter=50,
                                                  free_high_bit=False)
 
-        print('\nEpoch: [%d | %d] LR: %f' %
-              (epoch + 1, args.epochs, lr_current))
+        main_logger.info('\nEpoch: [%d | %d] LR: %f' %
+                         (epoch + 1, args.epochs, lr_current))
 
         train_loss, train_acc = train(train_loader, model, criterion,
                                       optimizer, epoch, device)
@@ -548,5 +552,4 @@ if __name__ == '__main__':
 
     logger.close()
 
-    print('Best acc:')
-    print(best_acc)
+    main_logger.info(f'Best accuracy: {best_acc}')

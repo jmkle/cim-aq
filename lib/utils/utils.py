@@ -37,7 +37,7 @@ class AverageMeter(object):
             self.avg = self.sum / self.count
 
 
-class Logger(object):
+class MetricsLogger(object):
 
     def __init__(self, fpath, title=None, resume=False):
         self.file = None
@@ -133,39 +133,6 @@ def sample_from_truncated_normal_distribution(lower, upper, mu, sigma, size=1):
                                loc=mu,
                                scale=sigma,
                                size=size)
-
-
-# logging
-def prRed(prt):
-    print("\033[91m {}\033[00m".format(prt))
-
-
-def prGreen(prt):
-    print("\033[92m {}\033[00m".format(prt))
-
-
-def prYellow(prt):
-    print("\033[93m {}\033[00m".format(prt))
-
-
-def prLightPurple(prt):
-    print("\033[94m {}\033[00m".format(prt))
-
-
-def prPurple(prt):
-    print("\033[95m {}\033[00m".format(prt))
-
-
-def prCyan(prt):
-    print("\033[96m {}\033[00m".format(prt))
-
-
-def prLightGray(prt):
-    print("\033[97m {}\033[00m".format(prt))
-
-
-def prBlack(prt):
-    print("\033[98m {}\033[00m".format(prt))
 
 
 def get_num_gen(gen):
