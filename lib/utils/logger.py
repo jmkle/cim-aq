@@ -2,7 +2,7 @@ import logging
 import sys
 
 # Create logger
-logger = logging.getLogger('HAQ')
+logger = logging.getLogger('CIM-AQ')
 logger.setLevel(logging.DEBUG)
 
 # Remove default handlers to avoid duplicate logs
