@@ -7,16 +7,15 @@ import math
 import os
 from copy import deepcopy
 
+import models as customized_models
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision.models as models
-from tensorboardX import SummaryWriter
-
-import models as customized_models
 from lib.env.linear_quantize_env import LinearQuantizeEnv
 from lib.env.quantize_env import QuantizeEnv
 from lib.rl.ddpg import DDPG
+from tensorboardX import SummaryWriter
 
 # Models
 default_model_names = sorted(name for name in models.__dict__
