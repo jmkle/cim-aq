@@ -24,9 +24,6 @@ from tqdm import tqdm
 import models as customized_models
 from lib.utils.data_utils import get_dataset
 from lib.utils.logger import logger as main_logger
-from lib.utils.quantize_utils import (QConv2d, QLinear, calibrate, dorefa,
-                                      kmeans_update_model, quantize_model,
-                                      set_fix_weight)
 from lib.utils.utils import AverageMeter, MetricsLogger, accuracy
 
 # Models
@@ -191,7 +188,6 @@ def load_my_state_dict(model, state_dict):
             continue
         param_data = param.data
         if model_state[name].shape == param_data.shape:
-            # print("load%s"%name)
             model_state[name].copy_(param_data)
 
 
@@ -342,6 +338,9 @@ def adjust_learning_rate(optimizer, epoch):
 if __name__ == '__main__':
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
 
+    if args.resume:
+        args.checkpoint = os.path.dirname(args.resume)
+
     if not os.path.isdir(args.checkpoint):
         os.makedirs(args.checkpoint)
 
@@ -367,11 +366,16 @@ if __name__ == '__main__':
                           momentum=args.momentum,
                           weight_decay=args.weight_decay)
 
-    if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-        model.features = torch.nn.DataParallel(model.features)
-        model = model.to(device)
+    if torch.cuda.device_count() > 1:
+        if (args.arch.startswith('alexnet') or args.arch.startswith('vgg')
+                or args.arch.startswith('qalexnet')
+                or args.arch.startswith('qvgg')):
+            model.features = torch.nn.DataParallel(model.features)
+            model.to(device)
+        else:
+            model = torch.nn.DataParallel(model).to(device)
     else:
-        model = torch.nn.DataParallel(model).to(device)
+        model = model.to(device)
 
     # Resume
     title = 'ImageNet-' + args.arch

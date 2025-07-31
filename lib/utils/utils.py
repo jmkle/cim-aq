@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from lib.utils.quantize_utils import QConv2d, QLinear
-
 
 class AverageMeter(object):
 
@@ -103,11 +101,11 @@ def accuracy(output, target, topk=(1, )):
 
     _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
+    correct = pred.eq(target.reshape(1, -1).expand_as(pred))
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0)
+        correct_k = correct[:k].flatten().float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
@@ -237,7 +235,7 @@ def measure_model(model, H, W):
 
     # Get the device of the first model parameter
     device = next(model.parameters()).device
-    data = torch.zeros(1, 3, H, W).to(device)
+    data = torch.zeros(1, 3, H, W, device=device)
 
     def should_measure(x):
         return is_leaf(x)
@@ -269,7 +267,9 @@ def measure_model(model, H, W):
                 restore_forward(child)
 
     modify_forward(model)
-    model.forward(data)
+    model.eval()
+    with torch.no_grad():
+        model(data)
     restore_forward(model)
 
     return count_ops, count_params

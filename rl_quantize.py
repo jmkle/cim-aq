@@ -114,7 +114,7 @@ def train(num_episode, agent, env, output, debug=False, wandb_enable=False):
         ])
 
         # [optional] save intermideate model
-        if episode % int(num_episode / 10) == 0:
+        if episode % checkpoint_interval == 0 and episode > 0:
             agent.save_model(output)
             logger.info(f"Checkpoint saved at episode {episode}")
 
@@ -415,7 +415,11 @@ if __name__ == "__main__":
                         help='number of rl to update each time')
     # training
     parser.add_argument('--max_episode_length', default=1e9, type=int, help='')
-    parser.add_argument('--output', default='../../save', type=str, help='')
+    parser.add_argument('--output',
+                        default=os.path.abspath(
+                            os.path.join(os.path.dirname(__file__), 'save')),
+                        type=str,
+                        help='')
     parser.add_argument('--debug', dest='debug', action='store_true')
     parser.add_argument('--init_w', default=0.003, type=float, help='')
     parser.add_argument('--train_episode',
@@ -493,6 +497,10 @@ if __name__ == "__main__":
     if args.suffix is not None:
         base_folder_name = base_folder_name + '_' + args.suffix
     args.output = os.path.join(args.output, base_folder_name)
+
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output, exist_ok=True)
+
     tfwriter = SummaryWriter(log_dir=args.output)
     text_writer = open(os.path.join(args.output, 'log.txt'), 'w')
 
@@ -589,3 +597,6 @@ if __name__ == "__main__":
                                      wandb_enable=args.wandb_enable)
     logger.info(f'best_reward: {best_reward}')
     logger.info(f'best_policy: {best_policy}')
+
+    # save the best policy
+    np.save(os.path.join(args.output, 'best_policy.npy'), best_policy)
