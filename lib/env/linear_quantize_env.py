@@ -34,8 +34,7 @@ class LinearQuantizeEnv:
                  args,
                  n_data_worker=16,
                  batch_size=256,
-                 float_bit=8,
-                 is_model_pruned=False):
+                 float_bit=8):
         # default setting
         self.quantizable_layer_types = [QConv2d, QLinear]
 
@@ -63,7 +62,6 @@ class LinearQuantizeEnv:
         self.data_type = data
         self.data_root = data_root
         self.compress_ratio = compress_ratio
-        self.is_model_pruned = is_model_pruned
         self.val_size = args.val_size
         self.train_size = args.train_size
         self.finetune_gamma = args.finetune_gamma
@@ -127,8 +125,7 @@ class LinearQuantizeEnv:
             param_group['lr'] *= self.finetune_gamma
 
     def step(self, action):
-        # Pseudo prune and get the corresponding statistics. The real pruning happens till the end of all pseudo pruning
-        action = self._action_wall(action)  # percentage to preserve
+        action = self._action_wall(action)  # convert action to valid bit width
 
         if self.action_radio_button:
             self.last_weight_action = action
@@ -260,7 +257,8 @@ class LinearQuantizeEnv:
         self.strategy[-1][1] = 8
 
     def _action_wall(self, action):
-        assert len(self.strategy) == self.cur_ind
+        assert len(self.quantization_strategy
+                   ) == self.cur_ind, 'Quantization strategy length mismatch'
         # limit the action to certain range
         action = float(action)
         min_bit, max_bit = self.bound_list[self.cur_ind]
@@ -331,7 +329,7 @@ class LinearQuantizeEnv:
             f'=> Total quantizable components: {len(self.quantizable_idx)}')
 
     def _build_state_embedding(self):
-        # measure model for cifar 32x32 input
+        # measure model for input
         if self.is_imagenet:
             measure_model(self.model_for_measure, 224, 224)
         else:
