@@ -23,39 +23,26 @@ Other papers related to automated model design:
 
 ## Dependencies
 
-We evaluate this code with Pytorch 1.1 (cuda10) and torchvision 0.3.0, you can install pytorch with conda:
+We evaluate this code with Pytorch 2.7.1 (cuda12) and torchvision 0.22.1. You can install dependencies with:
 
+```bash
+pip install -r requirements.txt
 ```
-# install pytorch
-conda install -y pytorch torchvision cudatoolkit=10.0 -c pytorch
-```
-
-And you can use the following command to set up the environment:
-
-```
-# install packages and download the pretrained model
-bash run/setup.sh
-```
-
-(If the server is down, you can download the pretrained model from google drive: [mobilenetv2-150.pth.tar](https://drive.google.com/open?id=1fZ1gNSzSZTQfJ0dL-bNYULNvZJxp_Y53))
 
 Current code base is tested under following environment:
 
-1. Python 3.7.3
-1. PyTorch 1.1
-1. torchvision 0.3.0
-1. numpy 1.14
-1. matplotlib 3.0.1
-1. scikit-learn 0.21.0
-1. easydict 1.8
-1. progress 1.4
-1. tensorboardX 1.7
+- Python 3.11.2
+- PyTorch 2.7.1
+- torchvision 0.22.1
+- TensorBoard 2.20.0
+- tqdm 4.67.1
+- W&B 0.21.0
 
 ## Dataset
 
 If you already have the ImageNet dataset for pytorch, you could create a link to data folder and use it:
 
-```
+```bash
 # prepare dataset, change the path to your own
 ln -s /path/to/imagenet/ data/
 ```
@@ -63,9 +50,9 @@ ln -s /path/to/imagenet/ data/
 If you do not have the ImageNet yet, you can download the ImageNet dataset and move validation images to labeled subfolders. To do this, you can use the following script:
 [https://raw.githubusercontent.com/soumith/imagenetloader.torch/master/valprep.sh](https://raw.githubusercontent.com/soumith/imagenetloader.torch/master/valprep.sh)
 
-We use a subset of ImageNet in the linear quantizaiton search phase to save the training time, to create the link of the subset, you can use the following tool:
+We use a subset of ImageNet in the linear quantization search phase to save the training time, to create the link of the subset, you can use the following tool:
 
-```
+```bash
 # prepare imagenet100 dataset
 python lib/utils/make_data.py
 ```
@@ -74,56 +61,62 @@ python lib/utils/make_data.py
 
 - You can run the bash file as following to search the K-Means quantization strategy, which only quantizes the weights with K-Means to compress model size of specific model.
 
-```
+```bash
 # K-Means quantization, for model size
 bash run/run_kmeans_quantize_search.sh
 ```
 
 - You can run the bash file as following to search the linear quantization strategy, which linearly quantizes both the weights and activations to reduce latency/energy of specific model.
 
-```
+```bash
 # Linear quantization, for latency/energy
 bash run/run_linear_quantize_search.sh
 ```
 
 - Usage details
 
-```
+```bash
 python rl_quantize.py --help
 ```
 
 ## Finetune Policy
 
-- After searching, you can get the quantization strategy list, and you can replace the strategy list in **finetune.py** to finetune and evaluate the performance on ImageNet dataset.
+- After searching, you can get the quantization strategy list (saved as a `.npy` file), and you can use the `--strategy_file` argument in **finetune.py** to finetune and evaluate the performance on ImageNet dataset.
+- Example usage:
+
+```bash
+python finetune.py --strategy_file checkpoints/mobilenetv2/best_policy.npy ...
+```
+
 - We set the default K-Means quantization strategy searched under preserve ratio = 0.1 like:
 
-```
+```bash
 # preserve ratio 10%
 strategy = [6, 6, 5, 5, 5, 5, 4, 5, 5, 4, 5, 5, 5, 5, 5, 5, 3, 5, 4, 3, 5, 4, 3, 4, 4, 4, 2, 5, 4, 3, 3, 5, 3, 2, 5, 3, 2, 4, 3, 2, 5, 3, 2, 5, 3, 4, 2, 5, 2, 3, 4, 2, 3, 4]
 ```
 
 You can follow the following bash file to finetune the K-Means quantized model to get a better performance:
 
-```
+```bash
 bash run/run_kmeans_quantize_finetune.sh
 ```
 
 - We set the default linear quantization strategy searched under preserve ratio = 0.6 like:
 
-```
+```bash
 # preserve ratio 60%
 strategy = [[8, -1], [7, 7], [5, 6], [4, 6], [5, 6], [5, 7], [5, 6], [7, 4], [4, 6], [4, 6], [7, 7], [5, 6], [4, 6], [7, 3], [5, 7], [4, 7], [7, 3], [5, 7], [4, 7], [7, 7], [4, 7], [4, 7], [6, 4], [6, 7], [4, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [6, 7], [6, 4], [5, 7], [6, 7], [6, 4], [5, 7], [6, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [8, 8]]
 ```
 
 You can follow the following bash file to finetune the linear quantized model to get a better performance:
 
-```
+```bash
 bash run/run_linear_quantize_finetune.sh
 ```
 
 - Usage details
 
-```
+```bash
 python finetune.py --help
 ```
 
@@ -131,7 +124,7 @@ python finetune.py --help
 
 You can download the pretrained quantized model like this:
 
-```
+```bash
 # download checkpoint
 mkdir -p checkpoints/resnet50/
 mkdir -p checkpoints/mobilenetv2/
@@ -146,7 +139,7 @@ cd ../..
 
 You can evaluate the K-Means quantized model like this:
 
-```
+```bash
 # evaluate K-Means quantization
 bash run/run_kmeans_quantize_eval.sh
 ```
@@ -158,7 +151,7 @@ bash run/run_kmeans_quantize_eval.sh
 
 You can evaluate the linear quantized model like this:
 
-```
+```bash
 # evaluate linear quantization
 bash run/run_linear_quantize_eval.sh
 ```
@@ -167,6 +160,13 @@ bash run/run_linear_quantize_eval.sh
 | ------------------------ | -------------- | ------------ | ------------ |
 | mobilenetv2 (original) | 1.0 | 72.05 | 90.49 |
 | mobilenetv2 (0.6x latency)| 0.6 | 71.23 | 90.00 |
+
+## Logging and Monitoring
+
+- All scripts use Python logging for progress and status.
+- Progress bars are shown with `tqdm`.
+- TensorBoard logs are written to `logs/` in the checkpoint directory.
+- Optionally, enable Weights & Biases logging with `--wandb_enable`.
 
 ## Code Formatting
 
@@ -186,4 +186,16 @@ cd utils && python format.py
 
 # Fix formatting issues  
 cd utils && python format.py --fix
+```
+
+## Requirements
+
+See `requirements.txt` for up-to-date dependencies. Main requirements:
+
+```shell
+tensorboard>=2.20.0
+torch>=2.7.1
+torchvision>=0.22.1
+tqdm>=4.67.1
+wandb
 ```
