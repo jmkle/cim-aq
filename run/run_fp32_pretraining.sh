@@ -38,14 +38,38 @@ NUM_WORKERS=${11:-"32"}                             # Number of DataLoader worke
 
 BASE_MODEL_NAME=${FP32_MODEL/custom_/}
 
+# Function to automatically detect number of classes from dataset directory
+detect_num_classes() {
+  local dataset_path="$1"
+  local train_dir="${dataset_path}/train"
+
+  if [ -d "$train_dir" ]; then
+    # Count subdirectories in train folder (each subdirectory represents a class)
+    local class_count=$(find "$train_dir" -maxdepth 1 -type d | wc -l)
+    # Subtract 1 because find includes the parent directory itself
+    echo $((class_count - 1))
+  else
+    echo "Error: Cannot detect classes - train directory not found at $train_dir" >&2
+    return 1
+  fi
+}
+
 # Determine the number of classes based on the dataset
 if [ "$DATASET" = "imagenet100" ]; then
   NUM_CLASSES=100
 elif [ "$DATASET" = "imagenet" ]; then
   NUM_CLASSES=1000
 else
-  echo "Unknown dataset: $DATASET - defaulting to 1000 classes"
-  NUM_CLASSES=1000
+  echo "Unknown dataset: $DATASET - attempting automatic detection..."
+  DETECTED_CLASSES=$(detect_num_classes "$DATASET_ROOT")
+  if [ $? -eq 0 ] && [ "$DETECTED_CLASSES" -gt 0 ] && [ "$DETECTED_CLASSES" -le 10000 ]; then
+    NUM_CLASSES=$DETECTED_CLASSES
+    echo "Automatically detected $NUM_CLASSES classes from dataset structure"
+  else
+    echo "Warning: Could not automatically detect classes or invalid count ($DETECTED_CLASSES)"
+    echo "Defaulting to 1000 classes"
+    NUM_CLASSES=1000
+  fi
 fi
 
 # Convert W&B enable string to CLI argument

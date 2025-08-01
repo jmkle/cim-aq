@@ -1,0 +1,150 @@
+---
+name: Build and Test
+on:
+  push:
+    branches: ['**']
+    tags: [v*]  # Trigger on version tags (v1.0.0, v2.1.3, etc.)
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Free up disk space
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h
+
+          # Remove packages if they exist, ignore errors if not found
+          sudo apt-get remove -y $(apt list --installed 2>/dev/null | grep -E '^ghc-8\.' | cut -d/ -f1) || true
+          sudo apt-get remove -y $(apt list --installed 2>/dev/null | grep -E '^dotnet-' | cut -d/ -f1) || true
+          sudo apt-get remove -y $(apt list --installed 2>/dev/null | grep -E '^llvm-' | cut -d/ -f1) || true
+          sudo apt-get remove -y $(apt list --installed 2>/dev/null | grep -E '^php' | cut -d/ -f1) || true
+
+          # Remove specific packages if they exist
+          for pkg in azure-cli google-cloud-sdk hhvm google-chrome-stable firefox powershell mono-devel; do
+            if dpkg -l | grep -q "^ii.*$pkg"; then
+              sudo apt-get remove -y "$pkg" || true
+            fi
+          done
+          sudo apt-get autoremove -y
+
+          # Remove directories if they exist
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/local/graalvm
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/chromium
+          sudo rm -rf /usr/local/lib/android
+          sudo apt-get clean
+          docker system prune -af
+          echo "Disk usage after cleanup:"
+          df -h
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+      - name: Free up space after push
+        run: |
+          docker system prune -af
+          echo "Disk usage after Docker push:"
+          df -h
+      - name: Pull image for testing
+        run: |
+          echo "Pulling image for testing: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
+          docker pull ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+      - name: Test Docker image basic functionality
+        run: |
+          echo "Testing Docker image basic functionality..."
+          docker run --rm ${{ fromJSON(steps.meta.outputs.json).tags[0] }} python --version
+          docker run --rm ${{ fromJSON(steps.meta.outputs.json).tags[0] }} which pip
+          docker run --rm ${{ fromJSON(steps.meta.outputs.json).tags[0] }} pip --version
+          docker run --rm ${{ fromJSON(steps.meta.outputs.json).tags[0] }} pip list | grep torch || echo "torch not found"
+      - name: Test CIM-AQ workflow
+        run: |-
+          echo "🚀 Starting CIM-AQ workflow test with test_config.yaml..."
+          echo "Using Docker image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
+
+          # Create directories for volume mounts
+          mkdir -p data checkpoints save
+
+          # Run the workflow test and capture exit code
+          if ! docker run --rm \
+            --shm-size=2g \
+            -v $(pwd)/data:/workspace/data \
+            -v $(pwd)/checkpoints:/workspace/checkpoints \
+            -v $(pwd)/save:/workspace/save \
+            ${{ fromJSON(steps.meta.outputs.json).tags[0] }} \
+            bash -c "
+              set -e  # Exit immediately if any command fails
+              echo '🚀 Starting CIM-AQ workflow test with test_config.yaml...'
+
+              # Install pillow for test data generation
+              echo '📦 Installing pillow...'
+              pip install pillow
+              
+              # Create test dataset
+              echo '📁 Creating test dataset...'
+              ./utils/create_test_data.sh
+              
+              # Verify test data was created
+              echo '📁 Verifying test dataset...'
+              train_classes=\$(ls data/test/train | wc -l)
+              val_classes=\$(ls data/test/val | wc -l)
+              echo \"Train classes: \$train_classes\"
+              echo \"Val classes: \$val_classes\"
+              
+              if [ \"\$train_classes\" -eq 0 ] || [ \"\$val_classes\" -eq 0 ]; then
+                echo '❌ Error: Test dataset creation failed - no classes found!'
+                exit 1
+              fi
+              
+              # Run the workflow with test configuration
+              echo '🧪 Running CIM-AQ workflow with test_config.yaml...'
+              if ! bash run/run_full_workflow.sh run/configs/test_config.yaml; then
+                echo '❌ CIM-AQ workflow test FAILED!'
+                exit 1
+              fi
+              
+              echo '✅ CIM-AQ workflow test completed successfully!'
+            "; then
+            echo "❌ CIM-AQ workflow test failed!"
+            exit 1
+          fi
+          echo "✅ All tests passed successfully!"

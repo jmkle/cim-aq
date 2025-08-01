@@ -110,7 +110,6 @@ class LinearQuantizeEnv:
         self.action_radio_button = True
 
         self.is_inception = args.arch.startswith('inception')
-        self.is_imagenet = ('imagenet' in self.data_type)
         self.use_top5 = args.use_top5
 
         # init reward
@@ -533,11 +532,13 @@ class LinearQuantizeEnv:
         return layer_embedding
 
     def _build_state_embedding(self):
-        # measure model for input
-        if self.is_imagenet:
-            measure_model(self.model_for_measure, 224, 224)
-        else:
-            measure_model(self.model_for_measure, 32, 32)
+        # measure model for input - automatically get input size from train_loader
+        sample_batch = next(iter(self.train_loader))
+        sample_input = sample_batch[0]  # Get input tensor from first batch
+        input_height, input_width = sample_input.shape[
+            -2:]  # Get H, W from tensor shape
+        measure_model(self.model_for_measure, input_height, input_width)
+
         # build the static part of the state embedding
         layer_embedding = []
         module_list = list(self.model_for_measure.modules())

@@ -1,0 +1,72 @@
+---
+##############################################################################
+# Copyright (C) 2025 Joel Klein
+# All Rights Reserved
+#
+# This work is licensed under the terms described in the LICENSE file
+# found in the root directory of this source tree.
+##############################################################################
+# CIM-AQ Test Configuration - Fast minimal workflow for CI testing
+# This config uses minimal parameters optimized for speed over accuracy:
+# - Only 2 classes with 1 image each (4 total images) using dedicated 'test' dataset
+# - 1 RL episode, 1 epoch for all training stages
+# - Higher learning rates for faster convergence
+# - Minimal batch size and reduced bit-width search space
+# Model Configuration
+models:
+  quant_model: qvgg11
+  fp32_model: custom_vgg11
+# Dataset Configuration  
+datasets:
+  small:
+    name: test
+    root: data/test
+  large:
+    name: test
+    root: data/test
+    enabled: false  # Disable large dataset stage for faster testing
+# Quantization Configuration
+quantization:
+  max_accuracy_drop: 5.0  # Higher tolerance for testing
+  min_bit: 4  # Higher min bit to reduce search space
+  max_bit: 8
+  force_first_last_layer: true
+  consider_cell_resolution: true
+# Training Configuration
+training:
+  # Learning rates for different stages and datasets
+  learning_rates:
+    small_dataset:
+      fp32_pretraining: 0.01
+      int8_pretraining: 0.01
+      mixed_precision_finetuning: 0.01
+      rl_finetune: 0.01
+    large_dataset:
+      fp32_pretraining: 0.001
+      int8_pretraining: 0.001
+      mixed_precision_finetuning: 0.001
+  rl:
+    train_episodes: 1  # Minimal episodes for fast testing
+  small_dataset:
+    fp32_epochs: 1  # Minimal epochs for testing
+    int8_epochs: 1
+    search_finetune_epochs: 1
+    final_finetune_epochs: 1
+  large_dataset:
+    fp32_epochs: 1
+    int8_epochs: 1
+    final_finetune_epochs: 1
+# Output Configuration
+output:
+  prefix: test
+# Device Configuration
+device:
+  gpu_id: '0'  # Use single GPU or CPU
+dataloader:
+  batch_size: 2  # Match number of classes for fast testing
+  num_workers: 1  # Single worker
+# Logging Configuration
+logging:
+  wandb:
+    enable: false  # Disable W&B for testing
+    project: cim-aq-test

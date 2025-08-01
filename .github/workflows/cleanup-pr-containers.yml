@@ -1,0 +1,129 @@
+---
+name: Cleanup PR Containers
+on:
+  pull_request:
+    types: [closed]
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Delete PR and branch container images
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |-
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const packageName = repo; // cim-aq
+            const prTag = `pr-${prNumber}`;
+            const branchName = context.payload.pull_request.head.ref;
+            const isMerged = context.payload.pull_request.merged;
+            console.log(`PR  #${prNumber} closed - Branch: ${branchName}, Merged: ${isMerged}`);
+            // Function to delete a container image by tag
+            async function deleteContainerByTag(tag, description) {
+              try {
+                // Get all versions of the package
+                const versions = await github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg({
+                  package_type: 'container',
+                  package_name: packageName,
+                  org: owner
+                });
+                
+                // Find the version with the specified tag
+                const targetVersion = versions.data.find(version => 
+                  version.metadata && version.metadata.container && 
+                  version.metadata.container.tags && 
+                  version.metadata.container.tags.includes(tag)
+                );
+                
+                if (targetVersion) {
+                  await github.rest.packages.deletePackageVersionForOrg({
+                    package_type: 'container',
+                    package_name: packageName,
+                    org: owner,
+                    package_version_id: targetVersion.id
+                  });
+                  
+                  console.log(`✅ Deleted ${description}: ${tag}`);
+                  return { success: true, found: true, tag: tag };
+                } else {
+                  console.log(`ℹ️ No ${description} found: ${tag}`);
+                  return { success: true, found: false, tag: tag };
+                }
+              } catch (error) {
+                console.log(`⚠️ Error deleting ${description} ${tag}: ${error.message}`);
+                return { success: false, found: false, tag: tag, error: error.message };
+              }
+            }
+            const results = [];
+            try {
+              // Always try to delete the PR container
+              const prResult = await deleteContainerByTag(prTag, "PR container");
+              results.push({ type: "PR", ...prResult });
+              // If PR was merged and it's not main branch, also delete the branch container
+              if (isMerged && branchName !== 'main') {
+                const branchResult = await deleteContainerByTag(branchName, "branch container");
+                results.push({ type: "Branch", ...branchResult });
+              }
+              
+              // Create summary comment
+              let commentBody = "🧹 **Container Cleanup Summary**\n\n";
+              
+              if (isMerged) {
+                commentBody += "✅ **PR was merged** - Cleaning up both PR and branch containers\n\n";
+              } else {
+                commentBody += "❌ **PR was closed without merging** - Cleaning up PR container only\n\n";
+              }
+              
+              const deletedContainers = [];
+              const notFoundContainers = [];
+              const errorContainers = [];
+              
+              results.forEach(result => {
+                const imageTag = `ghcr.io/${owner}/${repo}:${result.tag}`;
+                
+                if (result.success && result.found) {
+                  deletedContainers.push(`- ✅ **${result.type}**: \`${imageTag}\``);
+                } else if (result.success && !result.found) {
+                  notFoundContainers.push(`- ℹ️ **${result.type}**: \`${imageTag}\` (not found - may not have been built)`);
+                } else {
+                  errorContainers.push(`- ⚠️ **${result.type}**: \`${imageTag}\` (error: ${result.error})`);
+                }
+              });
+              
+              if (deletedContainers.length > 0) {
+                commentBody += "**Successfully deleted:**\n" + deletedContainers.join('\n') + "\n\n";
+              }
+              
+              if (notFoundContainers.length > 0) {
+                commentBody += "**Not found:**\n" + notFoundContainers.join('\n') + "\n\n";
+              }
+              
+              if (errorContainers.length > 0) {
+                commentBody += "**Errors encountered:**\n" + errorContainers.join('\n') + "\n\n";
+              }
+              if (isMerged && branchName === 'main') {
+                commentBody += `ℹ️ **Note**: Branch container for \`${branchName}\` was not deleted as it's a protected branch.\n\n`;
+              }
+              
+              // Add comment to PR
+              await github.rest.issues.createComment({
+                issue_number: prNumber,
+                owner: owner,
+                repo: repo,
+                body: commentBody
+              });
+              
+            } catch (error) {
+              console.log(`⚠️ Unexpected error during cleanup for PR ${prNumber}: ${error.message}`);
+              
+              // Add comment about unexpected cleanup error
+              await github.rest.issues.createComment({
+                issue_number: prNumber,
+                owner: owner,
+                repo: repo,
+                body: `🧹 **Container Cleanup**\n\nAttempted to clean up Docker containers for this PR but encountered an unexpected error.\n\n**Error:** ${error.message}\n\nContainers may need to be manually removed from the GitHub Container Registry.`
+              });
+            }

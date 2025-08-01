@@ -541,15 +541,8 @@ if __name__ == "__main__":
         if device.type == 'cuda':
             torch.cuda.manual_seed_all(args.seed)
 
-    if args.dataset == 'imagenet':
-        num_classes = 1000
-    elif args.dataset == 'imagenet100':
-        num_classes = 100
-    else:
-        raise NotImplementedError(f"Unsupported dataset: {args.dataset}")
-
     logger.info(f'==> Loading model: {args.arch}')
-    logger.info(f'==> Dataset: {args.dataset} (classes: {num_classes})')
+    logger.info(f'==> Dataset: {args.dataset}')
     logger.info(f'==> Dataset root: {args.dataset_root}')
 
     logger.info('==> Initializing quantization environment...')

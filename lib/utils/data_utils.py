@@ -143,6 +143,50 @@ def get_dataset(dataset_name,
                                                  pin_memory=pin_memory)
 
         n_class = 10
+    elif dataset_name == 'test':
+        # Minimal test dataset for CI/testing - automatically detects number of classes
+        traindir = Path(data_root) / 'train'
+        valdir = Path(data_root) / 'val'
+        assert traindir.exists(), f'{traindir} not found'
+        assert valdir.exists(), f'{valdir} not found'
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+
+        input_size = 299 if for_inception else 224
+
+        train_dataset = datasets.ImageFolder(
+            str(traindir),
+            transforms.Compose([
+                transforms.RandomResizedCrop(input_size),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+
+        train_loader = torch.utils.data.DataLoader(train_dataset,
+                                                   batch_size=batch_size,
+                                                   shuffle=True,
+                                                   num_workers=n_worker,
+                                                   pin_memory=pin_memory)
+
+        val_dataset = datasets.ImageFolder(
+            str(valdir),
+            transforms.Compose([
+                transforms.Resize(int(input_size / 0.875)),
+                transforms.CenterCrop(input_size),
+                transforms.ToTensor(),
+                normalize,
+            ]))
+
+        val_loader = torch.utils.data.DataLoader(val_dataset,
+                                                 batch_size=batch_size,
+                                                 shuffle=False,
+                                                 num_workers=n_worker,
+                                                 pin_memory=pin_memory)
+
+        # Automatically detect number of classes from dataset structure
+        n_class = len(train_dataset.classes)
+        logger.info(f'==> Test dataset: detected {n_class} classes')
     else:
         # Add customized data here
         raise NotImplementedError
@@ -278,6 +322,71 @@ def get_split_train_dataset(dataset_name,
                                                  num_workers=n_worker,
                                                  pin_memory=pin_memory)
         n_class = 100
+    elif dataset_name == 'test':
+        traindir = Path(data_root) / 'train'
+        valdir = Path(data_root) / 'val'
+        assert traindir.exists(), f'{traindir} not found'
+        assert valdir.exists(), f'{valdir} not found'
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+
+        input_size = 299 if for_inception else 224
+        train_transform = transforms.Compose([
+            transforms.RandomResizedCrop(input_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        test_transform = transforms.Compose([
+            transforms.Resize(int(input_size / 0.875)),
+            transforms.CenterCrop(input_size),
+            transforms.ToTensor(),
+            normalize,
+        ])
+
+        trainset = datasets.ImageFolder(str(traindir), train_transform)
+        valset = datasets.ImageFolder(str(traindir), test_transform)
+
+        n_train = len(trainset)
+        indices = list(range(n_train))
+        # shuffle the indices
+        np.random.seed(random_seed)
+        np.random.shuffle(indices)
+
+        # Automatically adjust val_size if it's too large for the dataset
+        if val_size >= n_train:
+            # For very small datasets, use a quarter for validation (minimum 1)
+            adjusted_val_size = max(1, n_train // 4)
+            logger.warning(
+                f'val_size ({val_size}) >= n_train ({n_train}), adjusting to {adjusted_val_size}'
+            )
+            val_size = adjusted_val_size
+
+        assert val_size < n_train, 'val size should less than n_train'
+        train_idx, val_idx = indices[val_size:], indices[:val_size]
+        if train_size:
+            train_idx = train_idx[:train_size]
+        logger.info(f'Data: train: {len(train_idx)}, val: {len(val_idx)}')
+
+        train_sampler = index_sampler(train_idx)
+        val_sampler = index_sampler(val_idx)
+
+        train_loader = torch.utils.data.DataLoader(trainset,
+                                                   batch_size=batch_size,
+                                                   sampler=train_sampler,
+                                                   num_workers=n_worker,
+                                                   pin_memory=pin_memory)
+        val_loader = torch.utils.data.DataLoader(valset,
+                                                 batch_size=batch_size,
+                                                 sampler=val_sampler,
+                                                 num_workers=n_worker,
+                                                 pin_memory=pin_memory)
+
+        # Automatically detect number of classes from dataset structure
+        n_class = len(trainset.classes)
+        logger.info(
+            f'==> Split train dataset: detected {n_class} classes in {dataset_name}'
+        )
     else:
         raise NotImplementedError
 

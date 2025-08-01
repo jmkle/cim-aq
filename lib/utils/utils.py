@@ -103,6 +103,10 @@ class MetricsLogger(object):
 
 
 def accuracy(output, target, topk=(1, )):
+    # Handle case where we have fewer classes than requested topk
+    num_classes = output.size(1)
+    topk = tuple(min(k, num_classes) for k in topk)
+
     maxk = max(topk)
     batch_size = target.size(0)
 
