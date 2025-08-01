@@ -1,4 +1,11 @@
 #!/bin/bash
+##############################################################################
+# Copyright (C) 2025 Joel Klein                                              #
+# All Rights Reserved                                                        #
+#                                                                            #
+# This work is licensed under the terms described in the LICENSE file        #
+# found in the root directory of this source tree.                           #
+##############################################################################
 
 # Model evaluation and analysis functions for CIM-AQ workflows
 # This library provides functions for evaluating models and extracting accuracy metrics

@@ -1,4 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+##############################################################################
+# Copyright (C) 2025 Joel Klein                                              #
+# All Rights Reserved                                                        #
+#                                                                            #
+# This work is licensed under the terms described in the LICENSE file        #
+# found in the root directory of this source tree.                           #
+##############################################################################
+
 # Create a uniform quantization strategy file with specified bit-width
 
 import argparse

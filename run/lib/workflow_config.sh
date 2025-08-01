@@ -1,4 +1,11 @@
 #!/bin/bash
+##############################################################################
+# Copyright (C) 2025 Joel Klein                                              #
+# All Rights Reserved                                                        #
+#                                                                            #
+# This work is licensed under the terms described in the LICENSE file        #
+# found in the root directory of this source tree.                           #
+##############################################################################
 
 # Configuration management functions for CIM-AQ workflows
 # This library provides functions for parsing YAML configs and setting up workflow variables

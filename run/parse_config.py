@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+##############################################################################
+# Copyright (C) 2025 Joel Klein                                              #
+# All Rights Reserved                                                        #
+#                                                                            #
+# This work is licensed under the terms described in the LICENSE file        #
+# found in the root directory of this source tree.                           #
+##############################################################################
 """
 YAML to Shell Variable Parser
 Reads a YAML configuration file and outputs shell variable assignments.

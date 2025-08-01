@@ -1,4 +1,11 @@
 #!/bin/bash
+##############################################################################
+# Copyright (C) 2025 Joel Klein                                              #
+# All Rights Reserved                                                        #
+#                                                                            #
+# This work is licensed under the terms described in the LICENSE file        #
+# found in the root directory of this source tree.                           #
+##############################################################################
 
 # CIM-AQ Full Workflow Script
 # This script orchestrates a two-stage CIM-AQ workflow using YAML configuration
