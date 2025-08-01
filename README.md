@@ -10,7 +10,7 @@ here: https://github.com/mit-han-lab/haq/
 
 # CIM-AQ: CIM-aware Automated Quantization with Mixed Precision
 
-[![Style](https://github.com/jmkle/cim-aq/actions/workflows/formatting.yml/badge.svg)](https://github.com/jmkle/cim-aq/actions/workflows/formatting.yml)
+[![Style](https://github.com/jmkle/cim-aq/actions/workflows/style.yml/badge.svg)](https://github.com/jmkle/cim-aq/actions/workflows/style.yml)
 
 This repository contains the PyTorch implementation of CIM-AQ: CIM-aware Automated Quantization with Mixed Precision.
 

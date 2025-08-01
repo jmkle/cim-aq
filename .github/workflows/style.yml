@@ -1,5 +1,5 @@
 ---
-name: Code Formatting Check and Fix
+name: Style
 on:
   push:
     branches: ['**']
