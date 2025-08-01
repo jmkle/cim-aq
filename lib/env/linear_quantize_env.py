@@ -565,7 +565,7 @@ class LinearQuantizeEnv:
         lookup_table_folder = 'lib/simulator/lookup_tables/'
         Path(lookup_table_folder).mkdir(parents=True, exist_ok=True)
         if self.cost_mode == 'crossbar':
-            fname = lookup_table_folder + self.arch + '_batch_' + str(
+            fname = lookup_table_folder + self.arch + '_batch' + str(
                 self.simulator_batch) + '_latency_table.npy'
         else:
             # add your own cost lookuptable here
@@ -577,7 +577,7 @@ class LinearQuantizeEnv:
             logger.debug(f'Latency table contents: {latency_list}')
         else:
             # you can put your own simulator/lookuptable here
-            raise NotImplementedError
+            raise NotImplementedError(f"Cost lookup table {fname} not found.")
         return latency_list.copy()
 
     def _finetune(self, train_loader, model, epochs=1, verbose=True):
