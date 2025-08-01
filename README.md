@@ -1,38 +1,27 @@
-# HAQ: Hardware-Aware Automated Quantization with Mixed Precision
+# CIM-AQ: CIM-aware Automated Quantization with Mixed Precision
 
-## Introduction
+[![Style](https://github.com/jmkle/cim-aq/actions/workflows/formatting.yml/badge.svg)](https://github.com/jmkle/cim-aq/actions/workflows/formatting.yml)
 
-This repo contains PyTorch implementation for paper [HAQ: Hardware-Aware Automated Quantization with Mixed Precision](http://openaccess.thecvf.com/content_CVPR_2019/papers/Wang_HAQ_Hardware-Aware_Automated_Quantization_With_Mixed_Precision_CVPR_2019_paper.pdf) (CVPR2019, oral)
+This repository contains the PyTorch implementation of CIM-AQ: CIM-aware Automated Quantization with Mixed Precision.
 
-![overview](https://hanlab.mit.edu/projects/haq/images/overview.png)
+CIM-AQ is based on the [HAQ framework](https://github.com/mit-han-lab/haq), modifying it to support Computing-in-Memory (CIM) architectures. The HAQ framework has been modernized, and its reward function has been adapted to minimize the latency of quantized models on CIM hardware while maintaining accuracy. Furthermore, the CIM-AQ framework includes a CIM-specific latency model that estimates the latency of quantized models on CIM hardware. This model is used during the quantization search process. Additionally, the framework was updated to use layers from [Xilinx/Brevitas](https://github.com/xilinx/brevitas) for quantization instead of the custom-designed layers. This allows for a more flexible and efficient quantization process that leverages Brevitas's capabilities for quantized neural networks. Brevitas provides easier extensibility to additional layer types and quantization schemes. It also offers the significant advantage that the resulting quantized neural networks can be exported directly to ONNX format, eliminating the need for additional conversion steps.
 
-```
-@inproceedings{haq,
-author = {Wang, Kuan and Liu, Zhijian and Lin, Yujun and Lin, Ji and Han, Song},
-title = {HAQ: Hardware-Aware Automated Quantization With Mixed Precision},
-booktitle = {IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-year = {2019}
-}
-```
+## Main folders and scripts
 
-Other papers related to automated model design:
-
-- AMC: AutoML for Model Compression and Acceleration on Mobile Devices ([ECCV 2018](https://arxiv.org/abs/1802.03494))
-
-- ProxylessNAS: Direct Neural Architecture Search on Target Task and Hardware ([ICLR 2019](https://arxiv.org/abs/1812.00332))
+- `lib/` - Core library code (env, RL, simulator, utils)
+- `models/` - Model definitions (ResNet, VGG, etc.)
+- `run/` - Bash scripts and configs for running workflows
+- `data/` - Symlink to datasets
+- `finetune.py` - Finetuning quantized models
+- `pretrain.py` - Pretraining models
+- `rl_quantize.py` - RL-based quantization search
 
 ## Dependencies
 
-We evaluate this code with Pytorch 2.7.1 (cuda12) and torchvision 0.22.1. You can install dependencies with:
-
-```bash
-pip install -r requirements.txt
-```
-
-Current code base is tested under following environment:
+The current codebase is tested under the following environment:
 
 - Python 3.11.2
-- PyTorch 2.7.1
+- PyTorch 2.7.1 (CUDA 12)
 - Brevitas 0.12.0
 - ONNX 1.18.0
 - ONNX Optimizer 0.3.13
@@ -43,9 +32,15 @@ Current code base is tested under following environment:
 - tqdm 4.67.1
 - W&B 0.21.0
 
+You can install the required dependencies using the provided `requirements.txt` file:
+
+```bash
+pip install -r requirements.txt
+```
+
 ## Dataset
 
-If you already have the ImageNet dataset for pytorch, you could create a link to data folder and use it:
+If you already have the ImageNet dataset for PyTorch, you can create a link to the data folder and use it:
 
 ```bash
 # prepare dataset, change the path to your own
@@ -62,140 +57,119 @@ We use a subset of ImageNet in the linear quantization search phase to save the 
 python lib/utils/make_data.py
 ```
 
-## Reinforcement learning search
+## CIM-aware Automated Quantization Execution
 
-- You can run the bash file as following to search the K-Means quantization strategy, which only quantizes the weights with K-Means to compress model size of specific model.
-
-```bash
-# K-Means quantization, for model size
-bash run/run_kmeans_quantize_search.sh
-```
-
-- You can run the bash file as following to search the linear quantization strategy, which linearly quantizes both the weights and activations to reduce latency/energy of specific model.
+We provide a script to run the complete CIM-aware automated quantization workflow:
 
 ```bash
-# Linear quantization, for latency/energy
-bash run/run_linear_quantize_search.sh
+bash run/run_full_workflow.sh /path/to/config.yaml
 ```
 
-- Usage details
+This script will execute the following steps:
+
+1. **Stage 1**: Finding the best mixed precision strategy for a given model on smaller dataset (e.g., ImageNet100).
+   1. **FP32 Pretraining**: Pretrain the model in full precision.
+   1. **INT8 Pretraining**: Pretrain the model with INT8 quantization.
+   1. **RL-based Quantization Search**: Perform the quantization search using reinforcement learning.
+   1. **Mixed Precision Fine-tuning**: Fine-tune the model with the best mixed precision strategy.
+   1. **Evaluation**: Evaluate the final quantized model.
+1. **Stage 2**: Finetuning the quantized model on the full dataset (e.g., ImageNet).
+   1. **FP32 Pretraining**: Pretrain the model in full precision.
+   1. **INT8 Pretraining**: Pretrain the model with INT8 quantization.
+   1. **Mixed Precision Fine-tuning**: Fine-tune the model with the best mixed precision strategy.
+   1. **Evaluation**: Evaluate the final quantized model.
+
+The workflow can be configured using the config.yaml file. A template configuration file ([`run/configs/config_template.yaml`](run/configs/config_template.yaml)) and an example configuration file ([`run/configs/example_config.yaml`](run/configs/example_config.yaml)) are provided. You can create your own configuration file based on these templates.
+
+Furthermore, the configs with which we evaluated CIM-AQ are provided in the `run/configs/` folder:
+
+- [`run/configs/qvgg16_imagenet.yaml`](run/configs/qvgg16_imagenet.yaml): Config for VGG16 quantization search on ImageNet
+- [`run/configs/qresnet18_imagenet.yaml`](run/configs/qresnet18_imagenet.yaml): Config for ResNet18 quantization search on ImageNet
+
+The steps in the workflow can be executed individually by running the corresponding scripts in the `run/` folder. The scripts are designed to be modular, so you can run only the steps you need.
+
+## FP32 Pretraining
+
+The FP32 pretraining can be run with the following command:
 
 ```bash
-python rl_quantize.py --help
+bash run_fp32_pretraining.sh [fp32_model] [dataset] [dataset_root] [fp32_finetune_epochs] [dataset_suffix] [learning_rate] [wandb_enable] [wandb_project] [gpu_id]
 ```
 
-## Finetune Policy
+This script will pretrain the specified model in full precision on the given dataset. The pretrained model will be saved in the `checkpoints/<model>_pretrained_<dataset_suffix>/` directory.
 
-- After searching, you can get the quantization strategy list (saved as a `.npy` file), and you can use the `--strategy_file` argument in **finetune.py** to finetune and evaluate the performance on ImageNet dataset.
-- Example usage:
+The FP32 pretraining downloads pretrained models from the [torchvision model zoo](https://pytorch.org/vision/stable/models.html) and tries to applies them before starting the training.
+
+## INT8 Pretraining
+
+The INT8 pretraining can be run with the following command:
 
 ```bash
-python finetune.py --strategy_file checkpoints/mobilenetv2/best_policy.npy ...
+bash run_int8_pretraining.sh [quant_model] [fp32_model] [dataset] [dataset_root] [uniform_8bit_epochs] [force_first_last_layer] [dataset_suffix] [learning_rate] [wandb_enable] [wandb_project] [gpu_id]
 ```
 
-- We set the default K-Means quantization strategy searched under preserve ratio = 0.1 like:
+It tries to find the pretrained FP32 model in `checkpoints/<fp32_model>_pretrained_<dataset_suffix>/` directory and uses it to pretrain the model with INT8 quantization. The pretrained INT8 model will be saved in the `checkpoints/<quant_model>_<dataset_suffix>/` directory.
+
+## Reinforcement Learning Quantization Search
+
+The RL-based quantization search is implemented in `rl_quantize.py`. It uses a reinforcement learning approach to find the best mixed precision strategy for a given model. The search process is guided by a reward function that tries to minimize the cost while maintaining accuracy.
+
+It can be run with the following command:
 
 ```bash
-# preserve ratio 10%
-strategy = [6, 6, 5, 5, 5, 5, 4, 5, 5, 4, 5, 5, 5, 5, 5, 5, 3, 5, 4, 3, 5, 4, 3, 4, 4, 4, 2, 5, 4, 3, 3, 5, 3, 2, 5, 3, 2, 4, 3, 2, 5, 3, 2, 5, 3, 4, 2, 5, 2, 3, 4, 2, 3, 4]
+bash run/run_rl_quantize.sh [quant_model] [dataset] [dataset_root] [max_accuracy_drop] [min_bit] [max_bit] [train_episodes] [search_finetune_epochs] [force_first_last_layer] [consider_cell_resolution] [output_suffix] [finetune_lr] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id]
 ```
 
-You can follow the following bash file to finetune the K-Means quantized model to get a better performance:
+Internally, it calls the `rl_quantize.py` script with the provided parameters. See `rl_quantize.py --help` for more details on the available options. After searching, the best quantization strategy is saved in the `save/<model>_<dataset>_<output_suffix>/best_policy.npy` file.
+
+The reinforcement learning quantization search can take a long time, depending on the model and dataset. Therefore, two constraints can be applied to limit the search space:
+
+1. `consider_cell_resolution`: If set to `True`, the search will consider the resolution of the cells for the weights in the model, which can significantly reduce the search space.
+1. `force_first_last_layer`: If set to `True`, the first and last layers of the model will always be quantized to 8 bit precision, which can help maintain accuracy.
+
+## Finetuning
+
+After searching, you can use the `.npy` strategy file to finetune and evaluate:
 
 ```bash
-bash run/run_kmeans_quantize_finetune.sh
+bash run/run_mp_finetune.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id]
 ```
 
-- We set the default linear quantization strategy searched under preserve ratio = 0.6 like:
+The `run_mp_finetuning.sh` script will finetune the model with the best mixed precision strategy found during the search phase. The finetuned model will be saved in the `checkpoints/<quant_model>_<output_suffix>/` directory.
 
-```bash
-# preserve ratio 60%
-strategy = [[8, -1], [7, 7], [5, 6], [4, 6], [5, 6], [5, 7], [5, 6], [7, 4], [4, 6], [4, 6], [7, 7], [5, 6], [4, 6], [7, 3], [5, 7], [4, 7], [7, 3], [5, 7], [4, 7], [7, 7], [4, 7], [4, 7], [6, 4], [6, 7], [4, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [5, 7], [7, 4], [6, 7], [6, 7], [6, 4], [5, 7], [6, 7], [6, 4], [5, 7], [6, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [7, 7], [4, 7], [7, 7], [8, 8]]
-```
-
-You can follow the following bash file to finetune the linear quantized model to get a better performance:
-
-```bash
-bash run/run_linear_quantize_finetune.sh
-```
-
-- Usage details
+Internally, similar to the FP32 and INT8 pretraining, it calls the `finetune.py` script with the provided parameters. You can see the available options by running:
 
 ```bash
 python finetune.py --help
 ```
 
-## Evaluate
-
-You can download the pretrained quantized model like this:
-
-```bash
-# download checkpoint
-mkdir -p checkpoints/resnet50/
-mkdir -p checkpoints/mobilenetv2/
-cd checkpoints/resnet50/
-wget https://hanlab.mit.edu/files/haq/resnet50_0.1_75.48.pth.tar
-cd ../mobilenetv2/
-wget https://hanlab.mit.edu/files/haq/qmobilenetv2_0.6_71.23.pth.tar
-cd ../..
-```
-
-(If the server is down, you can download the pretrained model from google drive: [qmobilenetv2_0.6_71.23.pth.tar](https://drive.google.com/open?id=1oW1Jq17LIwcOckOzZPWDlKEhGWkZ3F_r))
-
-You can evaluate the K-Means quantized model like this:
-
-```bash
-# evaluate K-Means quantization
-bash run/run_kmeans_quantize_eval.sh
-```
-
-| Models | preserve ratio | Top1 Acc (%) | Top5 Acc (%) |
-| ------------------------ | -------------- | ------------ | ------------ |
-| resnet50 (original) | 1.0 | 76.15 | 92.87 |
-| resnet50 (10x compress) | 0.1 | 75.48 | 92.42 |
-
-You can evaluate the linear quantized model like this:
-
-```bash
-# evaluate linear quantization
-bash run/run_linear_quantize_eval.sh
-```
-
-| Models | preserve ratio | Top1 Acc (%) | Top5 Acc (%) |
-| ------------------------ | -------------- | ------------ | ------------ |
-| mobilenetv2 (original) | 1.0 | 72.05 | 90.49 |
-| mobilenetv2 (0.6x latency)| 0.6 | 71.23 | 90.00 |
+The script will also export the quantized model to ONNX QCDQ format, which can be used for further deployment or inference.
 
 ## Logging and Monitoring
 
-- All scripts use Python logging for progress and status.
-- Progress bars are shown with `tqdm`.
-- TensorBoard logs are written to `logs/` in the checkpoint directory.
-- Optionally, enable Weights & Biases logging with `--wandb_enable`.
+- Python logging for progress/status
+- Progress bars via `tqdm`
+- TensorBoard logs in `logs/` under checkpoint directory
+- Optional: Weights & Biases logging with `--wandb_enable`
 
 ## Code Formatting
 
-This repository uses automated code formatting to ensure consistent style. The formatting workflow automatically:
-
-- **Checks** code formatting on every push and pull request
-- **Creates PRs** with formatting fixes for the main branch
-- **Commits** formatting fixes directly to feature branches
-
-### Manual Formatting
-
-To format code manually:
+Automated formatting checks run on every push/PR. To manually check/fix formatting:
 
 ```bash
-# Check formatting
-cd utils && python format.py
+python utils/format.py         # Check formatting
+python utils/format.py --fix   # Fix formatting issues
+```
 
-# Fix formatting issues  
-cd utils && python format.py --fix
+To see all available options, run:
+
+```bash
+python utils/format.py --help
 ```
 
 ## Requirements
 
-See `requirements.txt` for up-to-date dependencies. Main requirements:
+See `requirements.txt` for details. Main requirements:
 
 ```shell
 brevitas>=0.12.0
