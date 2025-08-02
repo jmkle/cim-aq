@@ -58,6 +58,10 @@ output:
 # Device Configuration
 device:
   gpu_id: 0,1  # Using multiple GPUs for faster training
+# DataLoader Configuration
+dataloader:
+  batch_size: 256  # Batch size for training/evaluation
+  num_workers: 32  # Number of DataLoader workers
 # Logging Configuration
 logging:
   wandb:

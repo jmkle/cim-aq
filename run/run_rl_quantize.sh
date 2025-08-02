@@ -18,8 +18,8 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 # 1. Generate hardware latency lookup table
 # 2. Run RL-based search for mixed precision using INT8 model as starting point
 
-# Usage: bash run_rl_quantize.sh [quant_model] [dataset] [dataset_root] [max_accuracy_drop] [min_bit] [max_bit] [train_episodes] [search_finetune_epochs] [force_first_last_layer] [consider_cell_resolution] [output_suffix] [finetune_lr] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id]
-# Example: bash run_rl_quantize.sh qvgg16 imagenet100 /path/to/dataset 1.0 2 8 600 3 true false accdrop1.0bit28 0.001 /path/to/uniform/model.pth.tar false cim-aq-quantization 1
+# Usage: bash run_rl_quantize.sh [quant_model] [dataset] [dataset_root] [max_accuracy_drop] [min_bit] [max_bit] [train_episodes] [search_finetune_epochs] [force_first_last_layer] [consider_cell_resolution] [output_suffix] [finetune_lr] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers]
+# Example: bash run_rl_quantize.sh qvgg16 imagenet100 /path/to/dataset 1.0 2 8 600 3 true false accdrop1.0bit28 0.001 /path/to/uniform/model.pth.tar false cim-aq-quantization 1 256 32
 
 # Default values
 QUANT_MODEL=${1:-"qvgg16"}                          # Quantized model architecture
@@ -38,6 +38,8 @@ UNIFORM_MODEL_FILE="${13:-"${REPO_ROOT}/checkpoints/${QUANT_MODEL}_per-tensor_un
 WANDB_ENABLE=${14:-"false"}                         # Enable W&B logging
 WANDB_PROJECT=${15:-"cim-aq-quantization"}          # W&B project name
 GPU_ID=${16:-"1"}                                   # GPU ID(s) for CUDA_VISIBLE_DEVICES
+BATCH_SIZE=${17:-"128"}                             # Batch size for RL training
+NUM_WORKERS=${18:-"32"}                             # Number of DataLoader workers
 
 BASE_MODEL_NAME=${QUANT_MODEL/q/}
 
@@ -123,8 +125,8 @@ python "${REPO_ROOT}/rl_quantize.py" \
   --orig_bit 8 \
   --max_bit $MAX_BIT \
   --min_bit $MIN_BIT \
-  --n_worker 32 \
-  --data_bsize 128 \
+  --n_worker $NUM_WORKERS \
+  --data_bsize $BATCH_SIZE \
   --train_size 20000 \
   --val_size 10000 \
   --acc_drop $MAX_ACCURACY_DROP \

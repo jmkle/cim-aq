@@ -103,7 +103,7 @@ print_workflow_config "$CONFIG_FILE" "$REPO_ROOT"
 echo ""
 echo "Starting Stage 1: Small Dataset Policy Discovery..."
 
-if ! execute_stage "Stage 1" "$SMALL_DATASET" "$SMALL_DATASET_ROOT" "$SCRIPT_DIR" "$REPO_ROOT" "false"; then
+if ! execute_stage "Stage 1" "$SMALL_DATASET" "$SMALL_DATASET_ROOT" "$SCRIPT_DIR" "$REPO_ROOT" "false" "$BATCH_SIZE" "$NUM_WORKERS"; then
   echo "❌ Stage 1 execution failed"
   exit 1
 fi
@@ -111,7 +111,7 @@ fi
 # Evaluate Stage 1 models
 echo ""
 echo "========== Stage 1.5: Evaluation on $SMALL_DATASET =========="
-if ! evaluate_stage_models "SMALL" "$SMALL_DATASET" "$SMALL_DATASET_ROOT" "$REPO_ROOT"; then
+if ! evaluate_stage_models "SMALL" "$SMALL_DATASET" "$SMALL_DATASET_ROOT" "$REPO_ROOT" "$BATCH_SIZE" "$NUM_WORKERS"; then
   echo "❌ Stage 1 model evaluation failed"
   exit 1
 fi
@@ -128,7 +128,7 @@ if [ "$ENABLE_LARGE_DATASET" = "true" ]; then
   echo ""
   echo "Starting Stage 2: Large Dataset Policy Application..."
 
-  if ! execute_stage "Stage 2" "$LARGE_DATASET" "$LARGE_DATASET_ROOT" "$SCRIPT_DIR" "$REPO_ROOT" "true"; then
+  if ! execute_stage "Stage 2" "$LARGE_DATASET" "$LARGE_DATASET_ROOT" "$SCRIPT_DIR" "$REPO_ROOT" "true" "$BATCH_SIZE" "$NUM_WORKERS"; then
     echo "❌ Stage 2 execution failed"
     exit 1
   fi
@@ -136,7 +136,7 @@ if [ "$ENABLE_LARGE_DATASET" = "true" ]; then
   # Evaluate Stage 2 models
   echo ""
   echo "========== Stage 2.4: Evaluation on $LARGE_DATASET =========="
-  if ! evaluate_stage_models "LARGE" "$LARGE_DATASET" "$LARGE_DATASET_ROOT" "$REPO_ROOT"; then
+  if ! evaluate_stage_models "LARGE" "$LARGE_DATASET" "$LARGE_DATASET_ROOT" "$REPO_ROOT" "$BATCH_SIZE" "$NUM_WORKERS"; then
     echo "❌ Stage 2 model evaluation failed"
     exit 1
   fi

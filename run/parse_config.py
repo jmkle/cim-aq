@@ -125,6 +125,11 @@ def parse_config(config_path: Path, repo_root: Path) -> None:
         wandb_enable = str(wandb_config.get('enable', False)).lower()
         wandb_project = wandb_config.get('project', 'cim-aq-quantization')
 
+        # DataLoader configuration
+        dataloader_config = config.get('dataloader', {})
+        batch_size = str(dataloader_config.get('batch_size', 256))
+        num_workers = str(dataloader_config.get('num_workers', 32))
+
     except Exception as e:
         print(f"Error: Failed to extract configuration values: {e}")
         sys.exit(1)
@@ -162,6 +167,9 @@ def parse_config(config_path: Path, repo_root: Path) -> None:
     print(f'LARGE_FP32_LEARNING_RATE="{large_fp32_lr}"')
     print(f'LARGE_INT8_LEARNING_RATE="{large_int8_lr}"')
     print(f'LARGE_MP_LEARNING_RATE="{large_mp_lr}"')
+    # DataLoader configuration variables
+    print(f'BATCH_SIZE="{batch_size}"')
+    print(f'NUM_WORKERS="{num_workers}"')
 
 
 def main() -> None:

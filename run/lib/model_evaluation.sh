@@ -22,6 +22,8 @@ evaluate_model() {
   local strategy_file="$5"
   local repo_root="$6"
   local use_amp="${7:-false}"
+  local batch_size="${8:-256}"
+  local num_workers="${9:-32}"
 
   if [ ! -f "$model_file" ]; then
     echo "Warning: Model file not found: $model_file" >&2
@@ -33,8 +35,8 @@ evaluate_model() {
         -d $dataset_root \
         --data_name $dataset_name \
         --evaluate \
-        --test_batch 256 \
-        --workers 32 \
+        --batch_size $batch_size \
+        --workers $num_workers \
         --strategy_file $strategy_file \
         --resume $model_file"
 
@@ -66,6 +68,8 @@ evaluate_stage_models() {
   local dataset="$2"
   local dataset_root="$3"
   local repo_root="$4"
+  local batch_size="${5:-256}"
+  local num_workers="${6:-32}"
 
   local fp32_model_var="${stage_name}_FP32_MODEL_FILE"
   local int8_model_var="${stage_name}_INT8_MODEL_FILE"
@@ -83,7 +87,7 @@ evaluate_stage_models() {
   if [ -f "$fp32_model_file" ]; then
     local fp32_strategy_file="${repo_root}/save/uniform_strategies/${FP32_MODEL}_w8a8.npy"
     local fp32_results
-    fp32_results=$(evaluate_model "$FP32_MODEL" "$fp32_model_file" "$dataset_root" "$dataset" "$fp32_strategy_file" "$repo_root" "false")
+    fp32_results=$(evaluate_model "$FP32_MODEL" "$fp32_model_file" "$dataset_root" "$dataset" "$fp32_strategy_file" "$repo_root" "false" "$batch_size" "$num_workers")
 
     if [ $? -eq 0 ]; then
       eval "$fp32_results"
@@ -99,7 +103,7 @@ evaluate_stage_models() {
   if [ -f "$int8_model_file" ]; then
     local uniform_strategy_file="${repo_root}/save/uniform_strategies/${QUANT_MODEL}_w8a8.npy"
     local int8_results
-    int8_results=$(evaluate_model "$QUANT_MODEL" "$int8_model_file" "$dataset_root" "$dataset" "$uniform_strategy_file" "$repo_root" "true")
+    int8_results=$(evaluate_model "$QUANT_MODEL" "$int8_model_file" "$dataset_root" "$dataset" "$uniform_strategy_file" "$repo_root" "true" "$batch_size" "$num_workers")
 
     if [ $? -eq 0 ]; then
       eval "$int8_results"
@@ -114,7 +118,7 @@ evaluate_stage_models() {
   # Evaluate mixed precision model
   if [ -f "$final_model_file" ] && [ -f "$strategy_file" ]; then
     local final_results
-    final_results=$(evaluate_model "$QUANT_MODEL" "$final_model_file" "$dataset_root" "$dataset" "$strategy_file" "$repo_root" "true")
+    final_results=$(evaluate_model "$QUANT_MODEL" "$final_model_file" "$dataset_root" "$dataset" "$strategy_file" "$repo_root" "true" "$batch_size" "$num_workers")
 
     if [ $? -eq 0 ]; then
       eval "$final_results"

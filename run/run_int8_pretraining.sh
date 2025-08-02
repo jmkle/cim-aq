@@ -19,8 +19,8 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 # 2. Fine-tune the model with uniform 8-bit quantization using FP32 model as base
 # 3. Evaluate the 8-bit quantized model
 
-# Usage: bash run_int8_pretraining.sh [quant_model] [fp32_model] [dataset] [dataset_root] [uniform_8bit_epochs] [force_first_last_layer] [dataset_suffix] [learning_rate] [wandb_enable] [wandb_project] [gpu_id]
-# Example: bash run_int8_pretraining.sh qvgg16 custom_vgg16 imagenet100 /path/to/dataset 10 true imagenet100 0.001 false cim-aq-quantization 1
+# Usage: bash run_int8_pretraining.sh [quant_model] [fp32_model] [dataset] [dataset_root] [uniform_8bit_epochs] [force_first_last_layer] [dataset_suffix] [learning_rate] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers]
+# Example: bash run_int8_pretraining.sh qvgg16 custom_vgg16 imagenet100 /path/to/dataset 10 true imagenet100 0.001 false cim-aq-quantization 1 256 32
 
 # Default values
 QUANT_MODEL=${1:-"qvgg16"}                          # Quantized model architecture
@@ -34,6 +34,8 @@ LEARNING_RATE=${8:-"0.001"}                         # Learning rate for INT8 mod
 WANDB_ENABLE=${9:-"false"}                          # Enable W&B logging
 WANDB_PROJECT=${10:-"cim-aq-quantization"}          # W&B project name
 GPU_ID=${11:-"1"}                                   # GPU ID(s) for CUDA_VISIBLE_DEVICES
+BATCH_SIZE=${12:-"256"}                             # Batch size for training
+NUM_WORKERS=${13:-"32"}                             # Number of DataLoader workers
 
 # Convert string to boolean for Python scripts
 if [[ "$FORCE_FIRST_LAST_LAYER" == "true" || "$FORCE_FIRST_LAST_LAYER" == "True" || "$FORCE_FIRST_LAST_LAYER" == "1" ]]; then
@@ -117,9 +119,8 @@ python "${REPO_ROOT}/finetune.py" \
   --lr $LEARNING_RATE \
   --lr_type cos \
   --wd 0.0001 \
-  --train_batch 256 \
-  --test_batch 512 \
-  --workers 32 \
+  --batch_size $BATCH_SIZE \
+  --workers $NUM_WORKERS \
   --pretrained \
   --checkpoint $UNIFORM_MODEL_DIR \
   --strategy_file $UNIFORM_STRATEGY_FILE \
@@ -150,6 +151,8 @@ UNIFORM_EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
     -d $DATASET_ROOT \
     --data_name $DATASET \
     --evaluate \
+    --batch_size $BATCH_SIZE \
+    --workers $NUM_WORKERS \
     --resume $UNIFORM_MODEL_FILE \
     --amp \
     --gpu_id $GPU_ID \

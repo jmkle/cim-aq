@@ -21,6 +21,8 @@ execute_stage() {
   local script_dir="$4"
   local repo_root="$5"
   local skip_rl="${6:-false}"  # Skip RL search for Stage 2
+  local batch_size="${7:-256}"
+  local num_workers="${8:-32}"
 
   echo ""
   if [ "$skip_rl" = "true" ]; then
@@ -94,7 +96,9 @@ execute_stage() {
       "$fp32_lr" \
       "$WANDB_ENABLE" \
       "$WANDB_PROJECT" \
-      "$GPU_ID"
+      "$GPU_ID" \
+      "$batch_size" \
+      "$num_workers"
 
     if [ $? -ne 0 ]; then
       echo "Error: $stage_name FP32 pretraining failed"
@@ -119,7 +123,9 @@ execute_stage() {
       "$int8_lr" \
       "$WANDB_ENABLE" \
       "$WANDB_PROJECT" \
-      "$GPU_ID"
+      "$GPU_ID" \
+      "$batch_size" \
+      "$num_workers"
 
     if [ $? -ne 0 ]; then
       echo "Error: $stage_name INT8 pretraining failed"
@@ -150,7 +156,9 @@ execute_stage() {
       "$int8_model_file" \
       "$WANDB_ENABLE" \
       "$WANDB_PROJECT" \
-      "$GPU_ID"
+      "$GPU_ID" \
+      "$batch_size" \
+      "$num_workers"
 
     if [ $? -ne 0 ]; then
       echo "Error: $stage_name RL quantization search failed"
@@ -185,7 +193,9 @@ execute_stage() {
     "$int8_model_file" \
     "$WANDB_ENABLE" \
     "$WANDB_PROJECT" \
-    "$GPU_ID"
+    "$GPU_ID" \
+    "$batch_size" \
+    "$num_workers"
 
   if [ $? -ne 0 ]; then
     echo "Error: $stage_name mixed precision fine-tuning failed"

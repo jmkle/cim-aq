@@ -20,8 +20,8 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 # 3. Fine-tune the FP32 model to adjust the last layer for new classes
 # 4. Evaluate the pretrained model to get baseline accuracy
 
-# Usage: bash run_fp32_pretraining.sh [fp32_model] [dataset] [dataset_root] [fp32_finetune_epochs] [dataset_suffix] [learning_rate] [wandb_enable] [wandb_project] [gpu_id]
-# Example: bash run_fp32_pretraining.sh custom_vgg16 imagenet100 /path/to/dataset 5 imagenet100 0.0005 false cim-aq-quantization 1
+# Usage: bash run_fp32_pretraining.sh [fp32_model] [dataset] [dataset_root] [fp32_finetune_epochs] [dataset_suffix] [learning_rate] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers]
+# Example: bash run_fp32_pretraining.sh custom_vgg16 imagenet100 /path/to/dataset 5 imagenet100 0.0005 false cim-aq-quantization 1 256 32
 
 # Default values
 FP32_MODEL=${1:-"custom_vgg16"}                     # Full precision model architecture
@@ -33,6 +33,8 @@ LEARNING_RATE=${6:-"0.0005"}                        # Learning rate for FP32 mod
 WANDB_ENABLE=${7:-"false"}                          # Enable W&B logging
 WANDB_PROJECT=${8:-"cim-aq-quantization"}           # W&B project name
 GPU_ID=${9:-"1"}                                    # GPU ID(s) for CUDA_VISIBLE_DEVICES
+BATCH_SIZE=${10:-"256"}                             # Batch size for training
+NUM_WORKERS=${11:-"32"}                             # Number of DataLoader workers
 
 BASE_MODEL_NAME=${FP32_MODEL/custom_/}
 
@@ -129,9 +131,8 @@ python "${REPO_ROOT}/finetune.py" \
   --lr $LEARNING_RATE \
   --lr_type cos \
   --wd 0.0001 \
-  --train_batch 256 \
-  --test_batch 512 \
-  --workers 32 \
+  --batch_size $BATCH_SIZE \
+  --workers $NUM_WORKERS \
   --pretrained \
   --checkpoint $FP32_MODEL_DIR \
   --strategy_file $FP32_STRATEGY_FILE \
@@ -161,8 +162,8 @@ EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
     -d $DATASET_ROOT \
     --data_name $DATASET \
     --evaluate \
-    --test_batch 256 \
-    --workers 32 \
+    --batch_size $BATCH_SIZE \
+    --workers $NUM_WORKERS \
     --strategy_file $FP32_STRATEGY_FILE \
     --gpu_id $GPU_ID \
   --resume $FP32_MODEL_FILE 2>&1 | tee /dev/tty)

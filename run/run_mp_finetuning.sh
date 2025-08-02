@@ -18,8 +18,8 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 # 1. Fine-tune the model with the best mixed precision strategy
 # 2. Evaluate the final quantized model
 
-# Usage: bash run_mp_finetuning.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id]
-# Example: bash run_mp_finetuning.sh qvgg16 imagenet100 /path/to/dataset 30 /path/to/strategy.npy custom_run 0.0005 /path/to/uniform/model.pth.tar false cim-aq-quantization 1
+# Usage: bash run_mp_finetuning.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers]
+# Example: bash run_mp_finetuning.sh qvgg16 imagenet100 /path/to/dataset 30 /path/to/strategy.npy custom_run 0.0005 /path/to/uniform/model.pth.tar false cim-aq-quantization 1 256 32
 
 # Default values
 QUANT_MODEL=${1:-"qvgg16"}                          # Quantized model architecture
@@ -33,6 +33,8 @@ UNIFORM_MODEL_FILE=${8:-"${REPO_ROOT}/checkpoints/${QUANT_MODEL}_per-tensor_unif
 WANDB_ENABLE=${9:-"false"}                          # Enable W&B logging
 WANDB_PROJECT=${10:-"cim-aq-quantization"}          # W&B project name
 GPU_ID=${11:-"1"}                                   # GPU ID(s) for CUDA_VISIBLE_DEVICES
+BATCH_SIZE=${12:-"256"}                             # Batch size for training
+NUM_WORKERS=${13:-"32"}                             # Number of DataLoader workers
 
 if [[ "$WANDB_ENABLE" == "true" || "$WANDB_ENABLE" == "True" || "$WANDB_ENABLE" == "1" ]]; then
   WANDB_CLI_ARG="--wandb_enable"
@@ -96,9 +98,8 @@ python "${REPO_ROOT}/finetune.py" \
   --lr $LEARNING_RATE \
   --lr_type cos \
   --wd 0.0001 \
-  --train_batch 256 \
-  --test_batch 512 \
-  --workers 32 \
+  --batch_size $BATCH_SIZE \
+  --workers $NUM_WORKERS \
   --pretrained \
   --checkpoint "$CHECKPOINT_DIR" \
   --amp \
@@ -129,6 +130,8 @@ FINAL_EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
     -d $DATASET_ROOT \
     --data_name $DATASET \
     --evaluate \
+    --batch_size $BATCH_SIZE \
+    --workers $NUM_WORKERS \
     --resume $FINAL_MODEL_FILE \
     --gpu_id $GPU_ID \
     --amp \
