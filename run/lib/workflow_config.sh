@@ -155,5 +155,15 @@ print_workflow_config() {
   else
     echo "└─ W&B logging: DISABLED"
   fi
+
+  echo ""
+  echo "🧹 SPACE MANAGEMENT CONFIGURATION:"
+  if [ "$ENABLE_CLEANUP" = "true" ]; then
+    echo "├─ Cleanup enabled: YES"
+    echo "├─ Cleanup frequency: $CLEANUP_FREQUENCY"
+    echo "└─ Cleanup targets: $CLEANUP_TARGETS"
+  else
+    echo "└─ Cleanup enabled: NO"
+  fi
   echo "========================================================="
 }

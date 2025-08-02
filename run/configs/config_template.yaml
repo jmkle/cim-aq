@@ -67,6 +67,19 @@ logging:
   wandb:
     enable: false  # Enable Weights & Biases logging
     project: cim-aq-quantization  # W&B project name
+# Space Management Configuration
+# These options help manage disk space during training, especially useful in CI environments
+# or when working with limited storage. They control automatic cleanup of intermediate files.
+space_management:
+  enable_cleanup: false  # Enable automatic cleanup of intermediate files during training
+  cleanup_frequency: end  # When to perform cleanup: 'step' (after each training step), 'stage' (after each workflow stage), 'end' (only at workflow end)
+  cleanup_targets: checkpoints  # What to clean up - can be single string or list:
+    # Available options:
+    # - "checkpoints": Remove intermediate checkpoint.pth.tar files (keeps model_best.pth.tar)
+    # - "cache": Remove Python __pycache__ directories and .pyc files  
+    # - "logs": Remove checkpoint logs directories (keeps log.txt files)
+    # - "all": Enable all cleanup options above
+    # Examples: "checkpoints", ["checkpoints", "cache"], "all"
 # Example configurations:
 # 
 # Two-stage workflow (discover policy on ImageNet100, apply on full ImageNet):
@@ -85,3 +98,8 @@ logging:
 # - gpu_id: "0" - Use single GPU with ID 0
 # - gpu_id: "0,1" - Use GPUs 0 and 1 for multi-GPU training
 # - gpu_id: "0,1,2,3" - Use all 4 GPUs for maximum parallelism
+#
+# Space Management Examples:
+# - For CI environments: enable_cleanup: true, cleanup_frequency: step, cleanup_targets: all
+# - For development: enable_cleanup: false (default)
+# - For storage-constrained environments: enable_cleanup: true, cleanup_frequency: stage, cleanup_targets: checkpoints

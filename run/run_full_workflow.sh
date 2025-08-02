@@ -38,6 +38,11 @@ if ! source "${SCRIPT_DIR}/lib/results_reporting.sh"; then
   exit 1
 fi
 
+if ! source "${SCRIPT_DIR}/lib/cleanup_utils.sh"; then
+  echo "❌ Failed to load cleanup_utils.sh"
+  exit 1
+fi
+
 # Usage information
 show_usage() {
   echo "Usage: $0 <config_file>"
@@ -108,6 +113,9 @@ if ! execute_stage "Stage 1" "$SMALL_DATASET" "$SMALL_DATASET_ROOT" "$SCRIPT_DIR
   exit 1
 fi
 
+# Clean up intermediate files after Stage 1 (respects configuration)
+cleanup_intermediate_files "Stage 1" "$REPO_ROOT"
+
 # Evaluate Stage 1 models
 echo ""
 echo "========== Stage 1.5: Evaluation on $SMALL_DATASET =========="
@@ -133,6 +141,9 @@ if [ "$ENABLE_LARGE_DATASET" = "true" ]; then
     exit 1
   fi
 
+  # Clean up intermediate files after Stage 2 (respects configuration)
+  cleanup_intermediate_files "Stage 2" "$REPO_ROOT"
+
   # Evaluate Stage 2 models
   echo ""
   echo "========== Stage 2.4: Evaluation on $LARGE_DATASET =========="
@@ -156,3 +167,12 @@ if ! generate_workflow_report "$CONFIG_FILE" "$MAX_ACCURACY_DROP" "$ENABLE_LARGE
   echo "❌ Workflow report generation failed"
   exit 1
 fi
+
+# Final cleanup (respects configuration)
+echo ""
+echo "🧹 Final cleanup and disk usage summary..."
+cleanup_intermediate_files "Final" "$REPO_ROOT"
+echo ""
+echo "📊 Final checkpoint directory sizes:"
+du -sh "${REPO_ROOT}/checkpoints"/* 2>/dev/null || echo "No checkpoint directories found"
+echo ""

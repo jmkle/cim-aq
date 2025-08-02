@@ -62,6 +62,7 @@ output:
 # Device Configuration
 device:
   gpu_id: '0'  # Use single GPU or CPU
+# DataLoader Configuration
 dataloader:
   batch_size: 2  # Match number of classes for fast testing
   num_workers: 1  # Single worker
@@ -70,3 +71,12 @@ logging:
   wandb:
     enable: false  # Disable W&B for testing
     project: cim-aq-test
+# Space Management Configuration
+# These options help manage disk space during training, especially useful in CI environments
+# or when working with limited storage. They control automatic cleanup of intermediate files.
+space_management:
+  enable_cleanup: true  # Enable automatic cleanup of intermediate files during training
+  cleanup_frequency: step  # When to perform cleanup: 'step' (after each training step), 'stage' (after each workflow stage), 'end' (only at workflow end)
+  cleanup_targets: all  # What to clean up - can be single string or list:
+    # Options: "checkpoints", "cache", "logs"
+    # Use "all" for everything, or list like: ["checkpoints", "cache"]

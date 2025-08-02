@@ -67,3 +67,12 @@ logging:
   wandb:
     enable: true
     project: cim-aq-quantization
+# Space Management Configuration
+# These options help manage disk space during training, especially useful in CI environments
+# or when working with limited storage. They control automatic cleanup of intermediate files.
+space_management:
+  enable_cleanup: false  # Enable automatic cleanup of intermediate files during training
+  cleanup_frequency: end  # When to perform cleanup: 'step' (after each training step), 'stage' (after each workflow stage), 'end' (only at workflow end)
+  cleanup_targets: checkpoints  # What to clean up - can be single string or list:
+    # Options: "checkpoints", "cache", "logs"
+    # Use "all" for everything, or list like: ["checkpoints", "cache"]

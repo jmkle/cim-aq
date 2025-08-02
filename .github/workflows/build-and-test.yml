@@ -83,6 +83,9 @@ jobs:
       - name: Free up space after push
         run: |
           docker system prune -af
+          # Clean up /tmp and other temporary directories
+          sudo rm -rf /tmp/* || true
+          sudo rm -rf /var/tmp/* || true
           echo "Disk usage after Docker push:"
           df -h
       - name: Pull image for testing
@@ -134,6 +137,10 @@ jobs:
                 echo '❌ Error: Test dataset creation failed - no classes found!'
                 exit 1
               fi
+              
+              # Monitor disk space during workflow
+              echo '📊 Initial disk usage:'
+              df -h
               
               # Run the workflow with test configuration
               echo '🧪 Running CIM-AQ workflow with test_config.yaml...'

@@ -13,6 +13,12 @@ set -euo pipefail
 # Stage execution functions for CIM-AQ workflows
 # This library provides functions for executing individual workflow stages
 
+# Source cleanup utilities
+if ! source "${SCRIPT_DIR}/lib/cleanup_utils.sh"; then
+  echo "❌ Failed to load cleanup_utils.sh"
+  exit 1
+fi
+
 # Execute a single stage with the given parameters
 execute_stage() {
   local stage_name="$1"      # "Stage 1" or "Stage 2"
@@ -104,6 +110,15 @@ execute_stage() {
       echo "Error: $stage_name FP32 pretraining failed"
       return 1
     fi
+
+    # Register the FP32 checkpoint directory for safe cleanup
+    fp32_checkpoint_dir="${repo_root}/checkpoints/${FP32_MODEL}_pretrained_${dataset}"
+    register_checkpoint_dir "$fp32_checkpoint_dir"
+
+    # Step-level cleanup after FP32 training
+    if [ "${CLEANUP_FREQUENCY:-end}" = "step" ]; then
+      cleanup_intermediate_files "FP32 pretraining" "$repo_root"
+    fi
   else
     echo "⏭️  Skipping $stage_name FP32 pretraining (model exists)"
   fi
@@ -130,6 +145,15 @@ execute_stage() {
     if [ $? -ne 0 ]; then
       echo "Error: $stage_name INT8 pretraining failed"
       return 1
+    fi
+
+    # Register the INT8 checkpoint directory for safe cleanup
+    int8_checkpoint_dir="${repo_root}/checkpoints/${QUANT_MODEL}_per-tensor_uniform_8bit_${dataset}"
+    register_checkpoint_dir "$int8_checkpoint_dir"
+
+    # Step-level cleanup after INT8 training
+    if [ "${CLEANUP_FREQUENCY:-end}" = "step" ]; then
+      cleanup_intermediate_files "INT8 pretraining" "$repo_root"
     fi
   else
     echo "⏭️  Skipping $stage_name INT8 pretraining (model exists)"
@@ -163,6 +187,11 @@ execute_stage() {
     if [ $? -ne 0 ]; then
       echo "Error: $stage_name RL quantization search failed"
       return 1
+    fi
+
+    # Step-level cleanup after RL search
+    if [ "${CLEANUP_FREQUENCY:-end}" = "step" ]; then
+      cleanup_intermediate_files "RL quantization search" "$repo_root"
     fi
 
     strategy_file="${repo_root}/save/${QUANT_MODEL}_${dataset}_${rl_output_suffix}_from_8bit/best_policy.npy"
@@ -200,6 +229,15 @@ execute_stage() {
   if [ $? -ne 0 ]; then
     echo "Error: $stage_name mixed precision fine-tuning failed"
     return 1
+  fi
+
+  # Register the mixed precision checkpoint directory for safe cleanup
+  mp_checkpoint_dir="${repo_root}/checkpoints/${QUANT_MODEL}_${mp_output_suffix}"
+  register_checkpoint_dir "$mp_checkpoint_dir"
+
+  # Step-level cleanup after mixed precision fine-tuning
+  if [ "${CLEANUP_FREQUENCY:-end}" = "step" ]; then
+    cleanup_intermediate_files "Mixed precision fine-tuning" "$repo_root"
   fi
 
   # Set strategy and final model file for evaluation
