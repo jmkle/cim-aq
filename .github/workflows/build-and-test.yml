@@ -8,6 +8,9 @@ on:
     branches: [main]
   release:
     types: [published]
+  schedule:
+    # Run weekly on Sunday night at 2 AM UTC to ensure main branch builds
+    - cron: 0 2 * * 0
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
