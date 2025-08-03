@@ -437,7 +437,7 @@ if __name__ == '__main__':
         test_loss, test_acc, test_acc5 = test(val_loader, model, criterion,
                                               start_epoch, device)
         main_logger.info(
-            f' Test Loss:  {test_loss:.8f}, Test Acc:  {test_acc:.4f}, Test Acc5: {test_acc5:.4f}'
+            f' Test Loss:  {test_loss:.8f}, Test Acc:  {test_acc:.4f}, Test Acc5:  {test_acc5:.4f}'
         )
         exit()
 

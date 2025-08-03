@@ -124,25 +124,41 @@ fi
 # Step 2: Evaluate the quantized model
 echo ""
 echo "Step 2/2: Evaluating the final quantized model..."
-# Run the evaluation, display output to console and capture it
-# Use /dev/tty if available (normal terminal), otherwise use stdout (Docker)
-if [ bash -c ": >/dev/tty" >/dev/null 2>/dev/null ]; then
-  TEE_TARGET="/dev/tty"
-else
-  TEE_TARGET="/dev/stdout"
-fi
 
-FINAL_EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
-    -a $QUANT_MODEL \
-    -d $DATASET_ROOT \
-    --data_name $DATASET \
-    --evaluate \
-    --batch_size $BATCH_SIZE \
-    --workers $NUM_WORKERS \
-    --resume $FINAL_MODEL_FILE \
-    --gpu_id $GPU_ID \
-    --amp \
-  --strategy_file $STRATEGY_FILE 2>&1 | tee $TEE_TARGET)
+# Run the evaluation
+# Use /dev/tty if available (normal terminal), otherwise just capture output
+if [ -t 0 ] && [ -w /dev/tty ]; then
+  # `/dev/tty` available - show live output and capture
+  FINAL_EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
+      -a $QUANT_MODEL \
+      -d $DATASET_ROOT \
+      --data_name $DATASET \
+      --evaluate \
+      --batch_size $BATCH_SIZE \
+      --workers $NUM_WORKERS \
+      --resume $FINAL_MODEL_FILE \
+      --gpu_id $GPU_ID \
+      --amp \
+    --strategy_file $STRATEGY_FILE 2>&1 | tee /dev/tty)
+else
+  # No interactive terminal (CI/batch) - capture output and show afterward
+  FINAL_EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
+      -a $QUANT_MODEL \
+      -d $DATASET_ROOT \
+      --data_name $DATASET \
+      --evaluate \
+      --batch_size $BATCH_SIZE \
+      --workers $NUM_WORKERS \
+      --resume $FINAL_MODEL_FILE \
+      --gpu_id $GPU_ID \
+      --amp \
+    --strategy_file $STRATEGY_FILE 2>&1)
+
+  # Show the captured output
+  echo "=== Mixed Precision Model Evaluation Output ==="
+  echo "$FINAL_EVAL_OUTPUT"
+  echo "==============================================="
+fi
 
 # Check if evaluation succeeded
 if [ $? -ne 0 ]; then
@@ -151,12 +167,21 @@ if [ $? -ne 0 ]; then
 fi
 
 # Try to extract the final accuracy
-FINAL_ACCURACY=$(echo "$FINAL_EVAL_OUTPUT" | grep -oP "Test Acc:\s+\K[0-9\.]+")
-FINAL_ACCURACY5=$(echo "$FINAL_EVAL_OUTPUT" | grep -oP "Test Acc5:\s+\K[0-9\.]+")
+FINAL_ACCURACY=$(echo "$FINAL_EVAL_OUTPUT" | grep -oP "Test Acc:\s*\K[0-9\.]+")
+FINAL_ACCURACY5=$(echo "$FINAL_EVAL_OUTPUT" | grep -oP "Test Acc5:\s*\K[0-9\.]+")
+
+# Validate that extraction worked
+if [ -z "$FINAL_ACCURACY" ] || [ -z "$FINAL_ACCURACY5" ]; then
+  echo "Warning: Failed to extract accuracy from evaluation output" >&2
+  echo "Evaluation output (last 10 lines):" >&2
+  echo "$FINAL_EVAL_OUTPUT" | tail -10 >&2
+  FINAL_ACCURACY="Unknown"
+  FINAL_ACCURACY5="Unknown"
+fi
 
 echo ""
 echo "========================================================="
 echo "Mixed precision fine-tuning complete!"
 echo "Final mixed precision model: $FINAL_MODEL_FILE"
-echo "Final accuracy with mixed precision: $FINAL_ACCURACY% (Top-5: $FINAL_ACCURACY5%)"
+echo "Final accuracy with mixed precision: ${FINAL_ACCURACY}% (Top-5: ${FINAL_ACCURACY5}%)"
 echo "========================================================="

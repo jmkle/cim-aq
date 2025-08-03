@@ -145,25 +145,41 @@ fi
 # Step 3: Evaluate the 8-bit quantized model
 echo ""
 echo "Step 3/3: Evaluating the 8-bit quantized model..."
-# Run the evaluation, display output to console and capture it
-# Use /dev/tty if available (normal terminal), otherwise use stdout (Docker)
-if [ bash -c ": >/dev/tty" >/dev/null 2>/dev/null ]; then
-  TEE_TARGET="/dev/tty"
-else
-  TEE_TARGET="/dev/stdout"
-fi
 
-UNIFORM_EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
-    -a $QUANT_MODEL \
-    -d $DATASET_ROOT \
-    --data_name $DATASET \
-    --evaluate \
-    --batch_size $BATCH_SIZE \
-    --workers $NUM_WORKERS \
-    --resume $UNIFORM_MODEL_FILE \
-    --amp \
-    --gpu_id $GPU_ID \
-  --strategy_file $UNIFORM_STRATEGY_FILE 2>&1 | tee $TEE_TARGET)
+# Run the evaluation
+# Use /dev/tty if available (normal terminal), otherwise just capture output
+if [ -t 0 ] && [ -w /dev/tty ]; then
+  # `/dev/tty` available - show live output and capture
+  UNIFORM_EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
+      -a $QUANT_MODEL \
+      -d $DATASET_ROOT \
+      --data_name $DATASET \
+      --evaluate \
+      --batch_size $BATCH_SIZE \
+      --workers $NUM_WORKERS \
+      --resume $UNIFORM_MODEL_FILE \
+      --amp \
+      --gpu_id $GPU_ID \
+    --strategy_file $UNIFORM_STRATEGY_FILE 2>&1 | tee /dev/tty)
+else
+  # No interactive terminal (CI/batch) - capture output and show afterward
+  UNIFORM_EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
+      -a $QUANT_MODEL \
+      -d $DATASET_ROOT \
+      --data_name $DATASET \
+      --evaluate \
+      --batch_size $BATCH_SIZE \
+      --workers $NUM_WORKERS \
+      --resume $UNIFORM_MODEL_FILE \
+      --amp \
+      --gpu_id $GPU_ID \
+    --strategy_file $UNIFORM_STRATEGY_FILE 2>&1)
+
+  # Show the captured output
+  echo "=== 8-bit Model Evaluation Output ==="
+  echo "$UNIFORM_EVAL_OUTPUT"
+  echo "===================================="
+fi
 
 # Check if evaluation succeeded
 if [ $? -ne 0 ]; then
@@ -172,13 +188,23 @@ if [ $? -ne 0 ]; then
 fi
 
 # Extract the 8-bit model accuracy
-UNIFORM_8BIT_ACCURACY=$(echo "$UNIFORM_EVAL_OUTPUT" | grep -oP "Test Acc:\s+\K[0-9\.]+")
-UNIFORM_8BIT_ACCURACY5=$(echo "$UNIFORM_EVAL_OUTPUT" | grep -oP "Test Acc5:\s+\K[0-9\.]+")
-echo "Uniform 8-bit model accuracy: $UNIFORM_8BIT_ACCURACY% (Top-5: $UNIFORM_8BIT_ACCURACY5%)"
+UNIFORM_8BIT_ACCURACY=$(echo "$UNIFORM_EVAL_OUTPUT" | grep -oP "Test Acc:\s*\K[0-9\.]+")
+UNIFORM_8BIT_ACCURACY5=$(echo "$UNIFORM_EVAL_OUTPUT" | grep -oP "Test Acc5:\s*\K[0-9\.]+")
+
+# Validate that extraction worked
+if [ -z "$UNIFORM_8BIT_ACCURACY" ] || [ -z "$UNIFORM_8BIT_ACCURACY5" ]; then
+  echo "Warning: Failed to extract accuracy from evaluation output" >&2
+  echo "Evaluation output (last 10 lines):" >&2
+  echo "$UNIFORM_EVAL_OUTPUT" | tail -10 >&2
+  UNIFORM_8BIT_ACCURACY="Unknown"
+  UNIFORM_8BIT_ACCURACY5="Unknown"
+fi
+
+echo "Uniform 8-bit model accuracy: ${UNIFORM_8BIT_ACCURACY}% (Top-5: ${UNIFORM_8BIT_ACCURACY5}%)"
 
 echo ""
 echo "========================================================="
 echo "INT8 pretraining complete!"
 echo "Uniform 8-bit model: $UNIFORM_MODEL_FILE"
-echo "Uniform 8-bit accuracy: $UNIFORM_8BIT_ACCURACY% (Top-5: $UNIFORM_8BIT_ACCURACY5%)"
+echo "Uniform 8-bit accuracy: ${UNIFORM_8BIT_ACCURACY}% (Top-5: ${UNIFORM_8BIT_ACCURACY5}%)"
 echo "========================================================="

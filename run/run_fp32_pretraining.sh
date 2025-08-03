@@ -180,24 +180,39 @@ fi
 # Step 4: Evaluate the pretrained model to get baseline accuracy
 echo ""
 echo "Step 4/4: Evaluating FP32 model to get baseline accuracy..."
-# Run the evaluation with non-quantized model
-# Use /dev/tty if available (normal terminal), otherwise use stdout (Docker)
-if [ bash -c ": >/dev/tty" >/dev/null 2>/dev/null ]; then
-  TEE_TARGET="/dev/tty"
-else
-  TEE_TARGET="/dev/stdout"
-fi
 
-EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
-    -a $FP32_MODEL \
-    -d $DATASET_ROOT \
-    --data_name $DATASET \
-    --evaluate \
-    --batch_size $BATCH_SIZE \
-    --workers $NUM_WORKERS \
-    --strategy_file $FP32_STRATEGY_FILE \
-    --gpu_id $GPU_ID \
-  --resume $FP32_MODEL_FILE 2>&1 | tee $TEE_TARGET)
+# Run the evaluation with non-quantized model
+# Use /dev/tty if available (normal terminal), otherwise just capture output
+if [ bash -c ": >/dev/tty" >/dev/null 2>/dev/null ]; then
+  # `/dev/tty` available - show live output and capture
+  EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
+      -a $FP32_MODEL \
+      -d $DATASET_ROOT \
+      --data_name $DATASET \
+      --evaluate \
+      --batch_size $BATCH_SIZE \
+      --workers $NUM_WORKERS \
+      --strategy_file $FP32_STRATEGY_FILE \
+      --gpu_id $GPU_ID \
+    --resume $FP32_MODEL_FILE 2>&1 | tee /dev/tty)
+else
+  # No interactive terminal (CI/batch) - capture output and show afterward
+  EVAL_OUTPUT=$(python "${REPO_ROOT}/finetune.py" \
+      -a $FP32_MODEL \
+      -d $DATASET_ROOT \
+      --data_name $DATASET \
+      --evaluate \
+      --batch_size $BATCH_SIZE \
+      --workers $NUM_WORKERS \
+      --strategy_file $FP32_STRATEGY_FILE \
+      --gpu_id $GPU_ID \
+    --resume $FP32_MODEL_FILE 2>&1)
+
+  # Show the captured output
+  echo "=== FP32 Model Evaluation Output ==="
+  echo "$EVAL_OUTPUT"
+  echo "===================================="
+fi
 
 # Check if evaluation succeeded
 if [ $? -ne 0 ]; then
@@ -206,13 +221,23 @@ if [ $? -ne 0 ]; then
 fi
 
 # Store the baseline accuracy by parsing the output
-BASELINE_ACCURACY=$(echo "$EVAL_OUTPUT" | grep -oP "Test Acc:\s+\K[0-9\.]+")
-BASELINE_ACCURACY5=$(echo "$EVAL_OUTPUT" | grep -oP "Test Acc5:\s+\K[0-9\.]+")
-echo "Baseline accuracy with fine-tuned FP32 model: $BASELINE_ACCURACY% (Top-5: $BASELINE_ACCURACY5%)"
+BASELINE_ACCURACY=$(echo "$EVAL_OUTPUT" | grep -oP "Test Acc:\s*\K[0-9\.]+")
+BASELINE_ACCURACY5=$(echo "$EVAL_OUTPUT" | grep -oP "Test Acc5:\s*\K[0-9\.]+")
+
+# Validate that extraction worked
+if [ -z "$BASELINE_ACCURACY" ] || [ -z "$BASELINE_ACCURACY5" ]; then
+  echo "Warning: Failed to extract accuracy from evaluation output" >&2
+  echo "Evaluation output (last 10 lines):" >&2
+  echo "$EVAL_OUTPUT" | tail -10 >&2
+  BASELINE_ACCURACY="Unknown"
+  BASELINE_ACCURACY5="Unknown"
+fi
+
+echo "Baseline accuracy with fine-tuned FP32 model: ${BASELINE_ACCURACY}% (Top-5: ${BASELINE_ACCURACY5}%)"
 
 echo ""
 echo "========================================================="
 echo "FP32 pretraining complete!"
 echo "FP32 fine-tuned model: $FP32_MODEL_FILE"
-echo "Baseline accuracy: $BASELINE_ACCURACY% (Top-5: $BASELINE_ACCURACY5%)"
+echo "Baseline accuracy: ${BASELINE_ACCURACY}% (Top-5: ${BASELINE_ACCURACY5}%)"
 echo "========================================================="
