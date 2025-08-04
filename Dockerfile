@@ -51,8 +51,9 @@ WORKDIR /workspace
 # Copy the entire project
 COPY . .
 
-# Create data directory
-RUN mkdir -p data
+# Create necessary directories with proper permissions
+RUN mkdir -p data pretrained/imagenet checkpoints save \
+    && chmod -R 755 data pretrained checkpoints save
 
 # Set the default command
 CMD ["bash"]

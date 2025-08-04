@@ -107,54 +107,6 @@ jobs:
           echo "🚀 Starting CIM-AQ workflow test with test_config.yaml..."
           echo "Using Docker image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
 
-          # Create directories for volume mounts
-          mkdir -p data checkpoints save
-
-          # Run the workflow test and capture exit code
-          if ! docker run --rm \
-            --shm-size=2g \
-            -v $(pwd)/data:/workspace/data \
-            -v $(pwd)/checkpoints:/workspace/checkpoints \
-            -v $(pwd)/save:/workspace/save \
-            ${{ fromJSON(steps.meta.outputs.json).tags[0] }} \
-            bash -c "
-              set -e  # Exit immediately if any command fails
-              echo '🚀 Starting CIM-AQ workflow test with test_config.yaml...'
-
-              # Install pillow for test data generation
-              echo '📦 Installing pillow...'
-              pip install pillow
-              
-              # Create test dataset
-              echo '📁 Creating test dataset...'
-              ./utils/create_test_data.sh
-              
-              # Verify test data was created
-              echo '📁 Verifying test dataset...'
-              train_classes=\$(ls data/test/train | wc -l)
-              val_classes=\$(ls data/test/val | wc -l)
-              echo \"Train classes: \$train_classes\"
-              echo \"Val classes: \$val_classes\"
-              
-              if [ \"\$train_classes\" -eq 0 ] || [ \"\$val_classes\" -eq 0 ]; then
-                echo '❌ Error: Test dataset creation failed - no classes found!'
-                exit 1
-              fi
-              
-              # Monitor disk space during workflow
-              echo '📊 Initial disk usage:'
-              df -h
-              
-              # Run the workflow with test configuration
-              echo '🧪 Running CIM-AQ workflow with test_config.yaml...'
-              if ! bash run/run_full_workflow.sh run/configs/test_config.yaml; then
-                echo '❌ CIM-AQ workflow test FAILED!'
-                exit 1
-              fi
-              
-              echo '✅ CIM-AQ workflow test completed successfully!'
-            "; then
-            echo "❌ CIM-AQ workflow test failed!"
-            exit 1
-          fi
+          # Use run_docker.sh with the specific image we built (always pull to ensure we test the latest)
+          ./run/run_docker.sh --image "${{ fromJSON(steps.meta.outputs.json).tags[0] }}" --gpu none --pull always --test
           echo "✅ All tests passed successfully!"

@@ -51,52 +51,40 @@ pip install -r requirements.txt
 
 ## Docker
 
-For consistent environments and easy deployment, you can use the provided Docker setup with GitHub Container Registry:
+For consistent environments and easy deployment, we provide a Docker image for CIM-AQ and a simple script to run it:
+
+```bash
+# Show all available options
+./run/run_docker.sh --help
+
+# Interactive bash session
+./run/run_docker.sh
+
+# Test workflow with synthetic data
+./run/run_docker.sh --test
+
+# Custom workflow with your config
+./run/run_docker.sh my_config.yaml
+
+# Use specific image tag and custom dataset
+./run/run_docker.sh --tag main --data /path/to/imagenet my_config.yaml
+
+# Use a specific image and run tests
+./run/run_docker.sh --image ghcr.io/jmkle/cim-aq:pr-123 --test
+
+# GPU options: all (default), none, specific devices
+./run/run_docker.sh --gpu all --test
+./run/run_docker.sh --gpu none --test
+./run/run_docker.sh --gpu 0,1 --test
+```
+
+This project is designed to run rootless, so you can also use `podman`. Make sure `podman-docker` is installed or create an alias for docker that points to podman.
 
 **Available Images:**
 
 - `ghcr.io/jmkle/cim-aq:latest` (main branch)
 - `ghcr.io/jmkle/cim-aq:<branch-name>` (feature branches)
 - `ghcr.io/jmkle/cim-aq:pr-<number>` (PRs, auto-cleaned)
-
-**Quick Start:**
-
-```bash
-# Pull and run with GPU support
-docker pull ghcr.io/jmkle/cim-aq:latest
-docker run -it --rm --gpus all \
-  -v $(pwd)/data:/workspace/data \
-  -v $(pwd)/checkpoints:/workspace/checkpoints \
-  -v $(pwd)/save:/workspace/save \
-  ghcr.io/jmkle/cim-aq:latest bash
-```
-
-**Test workflow with synthetic data:**
-
-```bash
-docker run --rm --gpus all \
-  -v $(pwd)/data:/workspace/data \
-  -v $(pwd)/checkpoints:/workspace/checkpoints \
-  -v $(pwd)/save:/workspace/save \
-  ghcr.io/jmkle/cim-aq:latest bash -c "
-    pip install pillow
-    ./utils/create_test_data.sh
-    bash run/run_full_workflow.sh run/configs/test_config.yaml
-"
-```
-
-**Run with your own dataset and config:**
-
-```bash
-docker run --rm --gpus all \
-  -v /path/to/your/imagenet:/workspace/data/imagenet \
-  -v $(pwd)/checkpoints:/workspace/checkpoints \
-  -v $(pwd)/save:/workspace/save \
-  -v /path/to/your/config.yaml:/workspace/my_config.yaml \
-  ghcr.io/jmkle/cim-aq:latest bash -c "
-    bash run/run_full_workflow.sh my_config.yaml
-"
-```
 
 **GPU Requirements:** [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) + CUDA 12.9.1 compatible drivers
 
