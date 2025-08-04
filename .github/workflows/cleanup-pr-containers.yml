@@ -5,144 +5,86 @@ on:
     types: [closed]
 jobs:
   cleanup:
-    # Ensure the GITHUB_TOKEN has read/write access to packages and write access to issues
+    name: Cleanup PR Containers
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      pull-requests: write
       issues: write
-    runs-on: ubuntu-latest
 
     # Only run in the base repository, not in forks
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
-      - name: Delete PR & branch container images
+      - name: Delete PR container image
+        id: delete_pr
+        continue-on-error: true
+        uses: dataaxiom/ghcr-cleanup-action@ad729defc2c5047d29d4f11ac4a080a493aebd14
+        with:
+          delete-tags: pr-${{ github.event.pull_request.number }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Delete branch container image
+        id: delete_branch
+        if: ${{ github.event.pull_request.merged == true && github.event.pull_request.head.ref != 'main' }}
+        continue-on-error: true
+        uses: dataaxiom/ghcr-cleanup-action@ad729defc2c5047d29d4f11ac4a080a493aebd14
+        with:
+          delete-tags: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Post cleanup summary
+        if: ${{ always() }}
         uses: actions/github-script@v7
+        env:
+          PR_OUTCOME: ${{ steps.delete_pr.outcome }}
+          BR_OUTCOME: ${{ steps.delete_branch.outcome }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |-
-            const { number: prNumber, head, merged: isMerged } = context.payload.pull_request;
-            const owner     = context.repo.owner;
-            const repo      = context.repo.repo;
-            const tagPr     = `pr-${prNumber}`;
-            const branch    = head.ref;
-            const pkgName   = repo;
-            const results   = [];
-            console.log(`🔍 Cleanup triggered for PR  #${prNumber} (branch="${branch}", merged=${isMerged})`);
-            // Function to list all container package versions, trying org packages first then user packages
-            const listVersions = async () => {
-              try {
-                return await github.paginate(
-                  github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
-                  { package_type: 'container', package_name: pkgName, org: owner, per_page: 100 },
-                  resp => resp.data
-                );
-              } catch {
-                // Fallback to user-owned packages if org call fails
-                return await github.paginate(
-                  github.rest.packages.getAllPackageVersionsForPackageOwnedByAuthenticatedUser,
-                  { package_type: 'container', package_name: pkgName, per_page: 100 },
-                  resp => resp.data
-                );
-              }
-            };
-            // Function to delete a container package version by tag and return status
-            async function deleteByTag(tag, label) {
-              try {
-                const versions = await listVersions();
-                const match = versions.find(v =>
-                  v.metadata?.container?.tags?.includes(tag)
-                );
-                if (!match) {
-                  console.log(`ℹ️  No ${label} found for tag="${tag}"`);
-                  return { ok: true, found: false, tag, label };
-                }
-                
-                // Determine parameters for org vs. user package deletion
-                const params = match.owner === owner
-                  ? { // Org-owned package
-                      package_type: 'container',
-                      package_name: pkgName,
-                      org: owner,
-                      package_version_id: match.id
-                    }
-                  : { // User-owned package
-                      package_type: 'container',
-                      package_name: pkgName,
-                      package_version_id: match.id
-                    };
-                
-                // Delete via the appropriate API endpoint
-                await github.rest.packages.deletePackageVersionForOrg?.(params)
-                  ?? await github.rest.packages.deletePackageVersionForAuthenticatedUser(params);
-                
-                console.log(`✅ Deleted ${label} tag="${tag}"`);
-                return { ok: true, found: true, tag, label };
-                
-              } catch (err) {
-                if (err.status === 404) {
-                  console.log(`ℹ️  ${label} already gone for tag="${tag}"`);
-                  return { ok: true, found: false, tag, label };
-                }
-                if (err.status === 403) {
-                  console.error(`🚫 Permission denied deleting ${label} tag="${tag}"`);
-                  return { ok: false, found: false, tag, label, error: '403 Forbidden' };
-                }
-                console.error(`⚠️  Error deleting ${label} tag="${tag}": ${err.message}`);
-                return { ok: false, found: false, tag, label, error: err.message };
-              }
+          script: |
+            const {
+              number: prNumber,
+              head: { ref: branch },
+              merged: isMerged,
+            } = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            // Step outcomes may be 'success' | 'failure' | 'skipped'
+            const prOutcome = process.env.PR_OUTCOME;
+            const brOutcome = process.env.BR_OUTCOME;
+            let body = "🧹 **Container Cleanup Summary**\n\n";
+            if (isMerged) {
+              body += `✅ **PR  #${prNumber} was merged** — we attempted to delete PR and branch containers.\n\n`;
+            } else {
+              body += `❌ **PR  #${prNumber} closed without merge** — we attempted to delete only the PR container.\n\n`;
             }
-            try {
-              // Delete the PR container image
-              results.push(await deleteByTag(tagPr, 'PR container'));
-              // If the PR was merged and branch is not main, delete the branch container image too
-              if (isMerged && branch !== 'main') {
-                results.push(await deleteByTag(branch, 'branch container'));
-              }
-              // Build the summary comment body
-              let body = "🧹 **Container Cleanup Summary**\n\n"
-                + (isMerged
-                    ? "✅ **PR was merged** — deleting both PR and branch containers\n\n"
-                    : "❌ **PR closed without merge** — deleting PR container only\n\n");
-              const deleted     = results.filter(r => r.ok && r.found);
-              const notFound    = results.filter(r => r.ok && !r.found);
-              const errors      = results.filter(r => !r.ok);
-              if (deleted.length) {
-                body += "**Deleted:**\n"
-                  + deleted.map(r => `- ✅ ${r.label}: \`ghcr.io/${owner}/${repo}:${r.tag}\``).join('\n')
-                  + "\n\n";
-              }
-              if (notFound.length) {
-                body += "**Not found:**\n"
-                  + notFound.map(r => `- ℹ️ ${r.label}: \`ghcr.io/${owner}/${repo}:${r.tag}\``).join('\n')
-                  + "\n\n";
-              }
-              if (errors.length) {
-                body += "**Errors:**\n"
-                  + errors.map(r => `- ⚠️ ${r.label}: \`ghcr.io/${owner}/${repo}:${r.tag}\` — ${r.error}`).join('\n')
-                  + "\n\n";
-              }
-              if (isMerged && branch === 'main') {
-                body += "ℹ️ **Note:** Branch `main` is protected and was not deleted.\n\n";
-              }
-              // Post the summary comment on the PR
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body
-              });
-            } catch (overallErr) {
-              console.error(`❗ Unexpected error during cleanup: ${overallErr.message}`);
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: [
-                  "🧹 **Container Cleanup Failed**",
-                  "",
-                  `Error: ${overallErr.message}`,
-                  "",
-                  "Please check and remove container images manually if necessary."
-                ].join('\n')
-              });
+            body += "**Cleanup actions taken:**\n";
+            body += `- 🗑️ PR container \`ghcr.io/${owner}/${repo}:pr-${prNumber}\`: **${prOutcome === 'success' ? 'Deleted' : prOutcome === 'failure' ? 'Failed' : 'Skipped'}**\n`;
+            if (isMerged && branch !== 'main') {
+              body += `- 🗑️ Branch container \`ghcr.io/${owner}/${repo}:${branch}\`: **${brOutcome === 'success' ? 'Deleted' : brOutcome === 'failure' ? 'Failed' : 'Skipped'}**\n`;
+            } else if (isMerged && branch === 'main') {
+              body += `- ℹ️ Branch \`main\` container was protected and **not deleted**\n`;
             }
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body,
+            });
+      - name: Fail if cleanup failed
+        if: ${{ always() }}
+        shell: bash
+        run: |-
+          echo "Checking cleanup step outcomes..." >&2
+          PR="${{ steps.delete_pr.outcome }}"
+          BR="${{ steps.delete_branch.outcome }}"
+          FAIL=false
+          if [ "$PR" = "failure" ]; then
+            echo "::error:: PR container cleanup failed (outcome=$PR)" >&2
+            FAIL=true
+          fi
+          if [ "$BR" = "failure" ]; then
+            echo "::error:: Branch container cleanup failed (outcome=$BR)" >&2
+            FAIL=true
+          fi
+          if [ "$FAIL" = true ]; then
+            echo "🛑 At least one deletion step failed - exiting with failure." >&2
+            exit 1
+          fi
