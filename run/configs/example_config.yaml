@@ -57,7 +57,7 @@ output:
   prefix: experiment1
 # Device Configuration
 device:
-  gpu_id: 0,1  # Using multiple GPUs for faster training
+  gpu_id: all  # Using all GPUs for faster training
 # DataLoader Configuration
 dataloader:
   batch_size: 256  # Batch size for training/evaluation

@@ -57,7 +57,12 @@ output:
   prefix: per-tensor_no_constraint  # Optional prefix for output folders
 # Device Configuration
 device:
-  gpu_id: '1'  # GPU ID(s) for CUDA_VISIBLE_DEVICES (e.g., "0", "0,1", "0,1,2,3")
+  gpu_id: all  # GPU ID(s) for CUDA_VISIBLE_DEVICES
+    # Options:
+    # - "0": Use single GPU with ID 0
+    # - "0,1": Use GPUs 0 and 1 for multi-GPU training  
+    # - "0,1,2,3": Use specific set of GPUs
+    # - "all": Use all available GPUs
 # DataLoader Configuration
 dataloader:
   batch_size: 256  # Batch size for training/evaluation
@@ -98,6 +103,7 @@ space_management:
 # - gpu_id: "0" - Use single GPU with ID 0
 # - gpu_id: "0,1" - Use GPUs 0 and 1 for multi-GPU training
 # - gpu_id: "0,1,2,3" - Use all 4 GPUs for maximum parallelism
+# - gpu_id: "all" - Automatically use all available GPUs (detected at runtime)
 #
 # Space Management Examples:
 # - For CI environments: enable_cleanup: true, cleanup_frequency: step, cleanup_targets: all

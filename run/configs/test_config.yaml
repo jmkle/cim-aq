@@ -61,7 +61,7 @@ output:
   prefix: test
 # Device Configuration
 device:
-  gpu_id: '0'  # Use single GPU or CPU
+  gpu_id: all  # GPU ID(s) for CUDA_VISIBLE_DEVICES (e.g., "0", "0,1", "0,1,2,3", "all")
 # DataLoader Configuration
 dataloader:
   batch_size: 2  # Match number of classes for fast testing

@@ -164,7 +164,14 @@ state = {k: v for k, v in args._get_kwargs()}
 lr_current = state['lr']
 
 # Use CUDA
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
+# Handle special "all" GPU configurations
+if args.gpu_id.lower() == 'all':
+    # Don't set CUDA_VISIBLE_DEVICES, let PyTorch see all GPUs
+    if 'CUDA_VISIBLE_DEVICES' in os.environ:
+        del os.environ['CUDA_VISIBLE_DEVICES']
+else:
+    # Set specific GPU(s)
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Random seed

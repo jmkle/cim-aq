@@ -54,7 +54,7 @@ training:
     final_finetune_epochs: 30  # Number of epochs for final fine-tuning
 # Device Configuration
 device:
-  gpu_id: '1'  # GPU ID(s) for CUDA_VISIBLE_DEVICES (e.g., "0", "0,1", "0,1,2,3")
+  gpu_id: all  # GPU ID(s) for CUDA_VISIBLE_DEVICES (e.g., "0", "0,1", "0,1,2,3", "all")
 # DataLoader Configuration
 dataloader:
   batch_size: 256  # Batch size for training/evaluation

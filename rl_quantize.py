@@ -529,7 +529,14 @@ if __name__ == "__main__":
     logger.info('==> Output path: {}...'.format(args.output))
 
     # Use CUDA if available, otherwise use CPU
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
+    # Handle special "all" GPU configurations
+    if args.gpu_id.lower() == 'all':
+        # Don't set CUDA_VISIBLE_DEVICES, let PyTorch see all GPUs
+        if 'CUDA_VISIBLE_DEVICES' in os.environ:
+            del os.environ['CUDA_VISIBLE_DEVICES']
+    else:
+        # Set specific GPU(s)
+        os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logger.info(f'==> Using device: {device}')
     logger.info(f'==> GPU IDs: {args.gpu_id}')
