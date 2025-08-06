@@ -190,6 +190,7 @@ if device.type == 'cuda':
     torch.cuda.manual_seed_all(args.manualSeed)
 
 best_acc = 0  # best test accuracy
+best_acc5 = 0  # corresponding top-5 accuracy when top-1 is best
 
 
 def load_my_state_dict(model, state_dict):
@@ -405,6 +406,8 @@ if __name__ == '__main__':
         args.checkpoint = str(Path(args.resume).parent)
         checkpoint = torch.load(args.resume, map_location=device)
         best_acc = checkpoint['best_acc']
+        best_acc5 = checkpoint.get('best_acc5',
+                                   0)  # Load best_acc5 if available
         main_logger.info(f'Previous best accuracy: {best_acc}')
         start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['state_dict'], strict=False)
@@ -469,6 +472,8 @@ if __name__ == '__main__':
 
         # save model
         is_best = test_acc > best_acc
+        if is_best:
+            best_acc5 = test_acc5  # Update corresponding top-5 accuracy
         best_acc = max(test_acc, best_acc)
         save_checkpoint(
             {
@@ -476,6 +481,7 @@ if __name__ == '__main__':
                 'state_dict': model.state_dict(),
                 'acc': test_acc,
                 'best_acc': best_acc,
+                'best_acc5': best_acc5,
                 'optimizer': optimizer.state_dict(),
             },
             is_best,
@@ -504,5 +510,13 @@ if __name__ == '__main__':
 
     inputs, _ = next(iter(train_loader))
     export_models(model, args.checkpoint, inputs, wandb_run)
+
+    # Log summary metrics to W&B if enabled
+    if args.wandb_enable and wandb_run is not None:
+        wandb_run.summary["best_top1_accuracy"] = best_acc
+        wandb_run.summary["corresponding_top5_accuracy"] = best_acc5
+        main_logger.info(
+            f'Logged to W&B summary - Best Top-1: {best_acc:.4f}, Corresponding Top-5: {best_acc5:.4f}'
+        )
 
     main_logger.info(f'Best accuracy: {best_acc}')
