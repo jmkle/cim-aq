@@ -330,7 +330,8 @@ def mobilenetv2(pretrained: bool = False, **kwargs) -> MobileNetV2:
         path = 'pretrained/imagenet/mobilenetv2-150.pth.tar'
         logger.info('==> load pretrained mobilenetv2 model..')
         assert Path(path).is_file(), 'Error: no checkpoint directory found!'
-        ch = torch.load(path)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        ch = torch.load(path, map_location=device)
         ch = {n.replace('module.', ''): v for n, v in ch['state_dict'].items()}
         model.load_state_dict(ch, strict=False)
     return model
@@ -351,7 +352,8 @@ def qmobilenetv2(pretrained: bool = False,
         path = 'pretrained/imagenet/mobilenetv2-150.pth.tar'
         logger.info('==> load pretrained mobilenetv2 model..')
         assert Path(path).is_file(), 'Error: no checkpoint directory found!'
-        ch = torch.load(path)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        ch = torch.load(path, map_location=device)
         ch = {n.replace('module.', ''): v for n, v in ch['state_dict'].items()}
         model.load_state_dict(ch, strict=False)
     return model

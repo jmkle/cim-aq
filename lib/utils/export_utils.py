@@ -37,7 +37,8 @@ def load_best_model(model: torch.nn.Module,
     """
     logger.info(f'Loading best model from {checkpoint_path}')
     model_path = Path(checkpoint_path) / Path("model_best.pth.tar")
-    checkpoint = torch.load(model_path)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint['state_dict'])
     return model
 

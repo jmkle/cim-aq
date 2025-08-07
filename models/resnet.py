@@ -441,7 +441,8 @@ def _load_pretrained(model: nn.Module,
     """Load pretrained weights from checkpoint file."""
     logger.info(f'==> load pretrained model from {path}..')
     assert Path(path).is_file(), 'Error: no checkpoint directory found!'
-    ch = torch.load(path)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    ch = torch.load(path, map_location=device)
 
     # Handle both state_dict formats (with 'state_dict' key or direct dict)
     if 'state_dict' in ch:
