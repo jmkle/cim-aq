@@ -9,42 +9,67 @@
 # here https://github.com/mit-han-lab/haq/                                   #
 ##############################################################################
 
-import os
 from multiprocessing import Pool
 from pathlib import Path
 
-from tqdm import tqdm
-
-root = Path.cwd()
-data_name = 'imagenet100'
-src_dir = root / 'data' / 'imagenet'
-dst_dir = root / 'data' / data_name
-txt_path = root / 'lib' / 'utils' / f'{data_name}.txt'
-
-n_thread = 32
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 
-def copy_func(pair):
-    src, dst = pair
-    os.system('ln -s {} {}'.format(src, dst))
+def create_symlink(src_dst_split: tuple[str, str, str]) -> None:
+    """Create symbolic link from source to destination directory."""
+    src, dst, split = src_dst_split
+    src_path = Path(src)
+    dst_path = Path(dst)
+    relative_src = Path('..') / '..' / 'imagenet' / split / src_path.name
+    dst_symlink = dst_path / src_path.name
+    dst_symlink.symlink_to(relative_src)
 
 
-for split in ['train', 'val']:
+def read_class_list(txt_path: Path) -> list[str]:
+    """Read class names from text file."""
+    with open(txt_path, 'r') as f:
+        return [line[:9] for line in f]
+
+
+def process_split(src_dir: Path,
+                  dst_dir: Path,
+                  split: str,
+                  class_list: list[str],
+                  n_threads: int = 32) -> None:
+    """Process a single split (train/val) by creating symlinks."""
     src_split_dir = src_dir / split
     dst_split_dir = dst_dir / split
     dst_split_dir.mkdir(parents=True, exist_ok=True)
-    cls_list = []
-    f = open(str(txt_path), 'r')
-    for x in f:
-        cls_list.append(x[:9])
-    pair_list = [(str(src_split_dir / c), str(dst_split_dir))
-                 for c in cls_list]
 
-    p = Pool(n_thread)
+    pair_list = [(str(src_split_dir / cls), str(dst_split_dir), split)
+                 for cls in class_list]
 
-    for _ in tqdm(p.imap_unordered(copy_func, pair_list),
-                  total=len(pair_list)):
-        pass
-    # p.map(worker, vid_list)
-    p.close()
-    p.join()
+    with Pool(n_threads) as pool:
+        if tqdm is not None:
+            for _ in tqdm(pool.imap_unordered(create_symlink, pair_list),
+                          total=len(pair_list),
+                          desc=f"Processing {split}"):
+                pass
+        else:
+            pool.map(create_symlink, pair_list)
+
+
+def main() -> None:
+    """Main function to create ImageNet100 dataset symlinks."""
+    root = Path(__file__).parent.parent.parent
+    data_name = 'imagenet100'
+    src_dir = root / 'data' / 'imagenet'
+    dst_dir = root / 'data' / data_name
+    txt_path = root / 'lib' / 'utils' / f'{data_name}.txt'
+
+    class_list = read_class_list(txt_path)
+
+    for split in ['train', 'val']:
+        process_split(src_dir, dst_dir, split, class_list)
+
+
+if __name__ == '__main__':
+    main()
