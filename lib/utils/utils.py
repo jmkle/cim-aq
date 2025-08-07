@@ -307,11 +307,19 @@ def measure_model(model, H, W):
 
                 def new_forward(m):
 
-                    def lambda_forward(x):
-                        measure_layer(m, x)
+                    def lambda_forward(*args, **kwargs):
+                        # Get the first argument as the main input tensor
+                        x = args[0] if args else None
+                        if x is not None:
+                            measure_layer(m, x)
                         type_name = get_layer_info(m)
 
                         # Skip the actual forward pass and instead return a zero tensor with the expected output shape
+                        if x is None:
+                            # If no input tensor, can't proceed with measurement
+                            raise ValueError(
+                                "No input tensor provided to lambda_forward")
+
                         # Conv2D
                         if type_name == 'CommonQuantConv2d' and hasattr(
                                 m, 'out_channels'):
@@ -325,7 +333,11 @@ def measure_model(model, H, W):
                             return x.new_zeros(b, m.out_features)
                         # MultiheadAttention
                         if type_name == 'CommonQuantMultiheadAttention':
-                            return x.new_zeros(x.size())
+                            # MultiheadAttention returns (attn_output, attn_output_weights)
+                            # For measurement purposes, return zero tensors with proper shape
+                            attn_output = x.new_zeros(x.size())
+                            attn_weights = None  # We can return None for weights when need_weights=False
+                            return attn_output, attn_weights
                         # For other layers, return a zero tensor with the same shape as input
                         return x.new_zeros(x.size())
 

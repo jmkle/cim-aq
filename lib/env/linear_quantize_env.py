@@ -473,9 +473,9 @@ class LinearQuantizeEnv:
             this_state.append([1.])  # kernel size (not applicable for FC)
             this_state.append([embed_dim * 3 * embed_dim
                                ])  # weight size (Q, K, V combined)
-            this_state.append([[
+            this_state.append([
                 seq_len * embed_dim
-            ]])  # input feature_map_size (seq_len * embed_dim)
+            ])  # input feature_map_size (seq_len * embed_dim)
         elif component_idx == 1:
             this_state.append(
                 [3.]
@@ -486,7 +486,7 @@ class LinearQuantizeEnv:
             this_state.append([1.])  # kernel size (not applicable for MatMul)
             this_state.append([num_heads * seq_len * head_dim
                                ])  # Q tensor size (first operand)
-            this_state.append([[num_heads * head_dim * seq_len]
+            this_state.append([num_heads * head_dim * seq_len
                                ])  # K^T tensor size (second operand)
         elif component_idx == 2:
             this_state.append([
@@ -498,7 +498,7 @@ class LinearQuantizeEnv:
             this_state.append([1.])  # kernel size (not applicable for MatMul)
             this_state.append([num_heads * seq_len * seq_len
                                ])  # attention output size (first operand)
-            this_state.append([[num_heads * seq_len * head_dim]
+            this_state.append([num_heads * seq_len * head_dim
                                ])  # V tensor size (second operand)
         elif component_idx == 3:
             this_state.append([
@@ -509,9 +509,9 @@ class LinearQuantizeEnv:
             this_state.append([0.])  # stride (not applicable for FC)
             this_state.append([1.])  # kernel size (not applicable for FC)
             this_state.append([embed_dim * embed_dim])  # weight size (output)
-            this_state.append([[
+            this_state.append([
                 seq_len * embed_dim
-            ]])  # input feature_map_size (seq_len * embed_dim)
+            ])  # input feature_map_size (seq_len * embed_dim)
         else:
             raise ValueError(
                 f'Invalid component_idx {component_idx} for MHA state building'
