@@ -22,7 +22,8 @@ sys.path.append(str((Path(__file__).resolve().parent / "..").absolute()))
 
 import models as customized_models
 from lib.utils.logger import logger
-from lib.utils.quantize_utils import CommonQuantConv2d, CommonQuantLinear
+from lib.utils.quantize_utils import (CommonQuantConv2d, CommonQuantLinear,
+                                      CommonQuantMultiheadAttention)
 
 # Models
 default_model_names = sorted(name for name in models.__dict__
@@ -84,9 +85,19 @@ with torch.no_grad():
 
 # Get quantizable layers
 quantizable_idx = []
-for i, m in enumerate(model.modules()):
-    if type(m) in [CommonQuantConv2d, CommonQuantLinear]:
-        quantizable_idx.append(i)
+quantizable_layer_count = 0
+for m in model.modules():
+    if type(m) in [
+            CommonQuantConv2d, CommonQuantLinear, CommonQuantMultiheadAttention
+    ]:
+        if type(m) == CommonQuantMultiheadAttention:
+            # MHA: Add 4 entries for internal components
+            for component_idx in range(4):
+                quantizable_idx.append(quantizable_layer_count)
+                quantizable_layer_count += 1
+        else:
+            quantizable_idx.append(quantizable_layer_count)
+            quantizable_layer_count += 1
 
 logger.info(f"==> Found {len(quantizable_idx)} quantizable layers")
 
