@@ -10,13 +10,13 @@
 # Format for each layer:
 #   type: "Conv2D"/"Dense"/"MatMul"
 #   output_dim: number of output channels/features/rows
-#   input_dim: input dimension (channels*height*width for Conv2D, features for Dense, input columns for MatMul)
+#   input_dim: input dimension (kernel_channels*kernel_height*kernel_width for Conv2D, features for Dense, input columns for MatMul)
 #   mvm_invocations: "output_height*output_width" for Conv2D layers, number of output columns for MatMul (omit for Dense)
 #   repeat_factor: (optional) number of times to repeat the layer (e.g., number of heads in a transformer block for MatMul)
 #
 # For convolutional layers:
 # - output_dim = number of output filters
-# - input_dim = input_channels * input_height * input_width
+# - input_dim = kernel_channels * kernel_height * kernel_width
 # - mvm_invocations = "output_height*output_width"
 #
 # For fully connected layers:
@@ -34,41 +34,41 @@ layer_dimensions:
   # Convolutional layers
   - type: Conv2D
     output_dim: 64
-    input_dim: 3*224*224  # 3 channels, 224×224 input
+    input_dim: 3*3*3  # 3 channels, 3x3 kernel
     mvm_invocations: 224*224  # Output size after convolution
   - type: Conv2D
     output_dim: 64
-    input_dim: 64*224*224  # 64 channels, 224×224 input
+    input_dim: 64*3*3  # 64 channels, 3x3 kernel
     mvm_invocations: 224*224  # Same padding
 
   # After pooling (e.g., 2x2 pooling reduces spatial dimensions)
   - type: Conv2D
     output_dim: 128
-    input_dim: 64*112*112  # 64 channels, 112×112 input (after pooling)
+    input_dim: 64*3*3  # 64 channels, 3x3 kernel
     mvm_invocations: 112*112
   - type: Conv2D
     output_dim: 128
-    input_dim: 128*112*112  # 128 channels, 112×112 input
+    input_dim: 128*3*3  # 128 channels, 3x3 kernel
     mvm_invocations: 112*112
 
   # After more pooling
   - type: Conv2D
     output_dim: 256
-    input_dim: 128*56*56  # 128 channels, 56×56 input
+    input_dim: 128*3*3  # 128 channels, 3x3 kernel
     mvm_invocations: 56*56
   - type: Conv2D
     output_dim: 256
-    input_dim: 256*56*56  # 256 channels, 56×56 input
+    input_dim: 256*3*3  # 256 channels, 3x3 kernel
     mvm_invocations: 56*56
 
   # After more pooling
   - type: Conv2D
     output_dim: 512
-    input_dim: 256*28*28  # 256 channels, 28×28 input
+    input_dim: 256*3*3  # 256 channels, 3x3 kernel
     mvm_invocations: 28*28
   - type: Conv2D
     output_dim: 512
-    input_dim: 512*28*28  # 512 channels, 28×28 input
+    input_dim: 512*3*3  # 512 channels, 3x3 kernel
     mvm_invocations: 28*28
 
   # Fully connected layers

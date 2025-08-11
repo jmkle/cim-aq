@@ -10,104 +10,104 @@
 # Format for each layer:
 #   type: "Conv2D"/"Dense"/"MatMul"
 #   output_dim: number of output channels/features/rows
-#   input_dim: input dimension (channels*height*width for Conv2D, features for Dense, input columns for MatMul)
+#   input_dim: input dimension (kernel_channels*kernel_height*kernel_width for Conv2D, features for Dense, input columns for MatMul)
 #   mvm_invocations: "output_height*output_width" for Conv2D layers, number of output columns for MatMul (omit for Dense)
 #   repeat_factor: (optional) number of times to repeat the layer (e.g., number of heads in a transformer block for MatMul)
 layer_dimensions:
   # Initial convolution
   - type: Conv2D
     output_dim: 64
-    input_dim: 3*224*224
+    input_dim: 3*7*7
     mvm_invocations: 112*112  # Conv1: 64 filters, 3×224×224 input, stride 2, output 112×112
 
   # Conv2_x (2 blocks, each with 2 conv layers) (after max pooling -> so input dim is 64*56*56)
   - type: Conv2D
     output_dim: 64
-    input_dim: 64*56*56
+    input_dim: 64*3*3
     mvm_invocations: 56*56  # Conv2_1_1
   - type: Conv2D
     output_dim: 64
-    input_dim: 64*56*56
+    input_dim: 64*3*3
     mvm_invocations: 56*56  # Conv2_1_2
   - type: Conv2D
     output_dim: 64
-    input_dim: 64*56*56
+    input_dim: 64*3*3
     mvm_invocations: 56*56  # Conv2_2_1
   - type: Conv2D
     output_dim: 64
-    input_dim: 64*56*56
+    input_dim: 64*3*3
     mvm_invocations: 56*56  # Conv2_2_2
 
   # Downsample for Conv3_x (first block, input 64 channels, output 128 channels, stride 2)
   - type: Conv2D
     output_dim: 128
-    input_dim: 64*56*56
+    input_dim: 64*1*1
     mvm_invocations: 28*28  # Downsample 1x1 for Conv3_1
 
   # Conv3_x (2 blocks, each with 2 conv layers, stride 2 at start)
   - type: Conv2D
     output_dim: 128
-    input_dim: 64*56*56
+    input_dim: 64*3*3
     mvm_invocations: 28*28  # Conv3_1_1, stride 2
   - type: Conv2D
     output_dim: 128
-    input_dim: 128*28*28
+    input_dim: 128*3*3
     mvm_invocations: 28*28  # Conv3_1_2
   - type: Conv2D
     output_dim: 128
-    input_dim: 128*28*28
+    input_dim: 128*3*3
     mvm_invocations: 28*28  # Conv3_2_1
   - type: Conv2D
     output_dim: 128
-    input_dim: 128*28*28
+    input_dim: 128*3*3
     mvm_invocations: 28*28  # Conv3_2_2
 
   # Downsample for Conv4_x (first block, input 128 channels, output 256 channels, stride 2)
   - type: Conv2D
     output_dim: 256
-    input_dim: 128*28*28
+    input_dim: 128*1*1
     mvm_invocations: 14*14  # Downsample 1x1 for Conv4_1
 
   # Conv4_x (2 blocks, each with 2 conv layers, stride 2 at start)
   - type: Conv2D
     output_dim: 256
-    input_dim: 128*28*28
+    input_dim: 128*3*3
     mvm_invocations: 14*14  # Conv4_1_1, stride 2
   - type: Conv2D
     output_dim: 256
-    input_dim: 256*14*14
+    input_dim: 256*3*3
     mvm_invocations: 14*14  # Conv4_1_2
   - type: Conv2D
     output_dim: 256
-    input_dim: 256*14*14
+    input_dim: 256*3*3
     mvm_invocations: 14*14  # Conv4_2_1
   - type: Conv2D
     output_dim: 256
-    input_dim: 256*14*14
+    input_dim: 256*3*3
     mvm_invocations: 14*14  # Conv4_2_2
 
   # Downsample for Conv5_x (first block, input 256 channels, output 512 channels, stride 2)
   - type: Conv2D
     output_dim: 512
-    input_dim: 256*14*14
+    input_dim: 256*1*1
     mvm_invocations: 7*7  # Downsample 1x1 for Conv5_1
 
   # Conv5_x (2 blocks, each with 2 conv layers, stride 2 at start)
   - type: Conv2D
     output_dim: 512
-    input_dim: 256*14*14
+    input_dim: 256*3*3
     mvm_invocations: 7*7  # Conv5_1_1, stride 2
   - type: Conv2D
     output_dim: 512
-    input_dim: 512*7*7
+    input_dim: 512*3*3
     mvm_invocations: 7*7  # Conv5_1_2
   - type: Conv2D
     output_dim: 512
-    input_dim: 512*7*7
+    input_dim: 512*3*3
     mvm_invocations: 7*7  # Conv5_2_1
   - type: Conv2D
     output_dim: 512
-    input_dim: 512*7*7
+    input_dim: 512*3*3
     mvm_invocations: 7*7  # Conv5_2_2
 
   # Fully connected layer
