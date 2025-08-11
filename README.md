@@ -214,6 +214,21 @@ python finetune.py --help
 
 The script will also export the quantized model to ONNX QCDQ format, which can be used for further deployment or inference.
 
+## Quantization Strategy Analysis
+
+The `get_cost_from_lookup_table.py` script analyzes quantization strategies and provides detailed cost breakdowns:
+
+```bash
+# Basic analysis
+python lib/simulator/get_cost_from_lookup_table.py --strategy best_policy.npy --lookup_table model_table.npy
+
+# Full analysis with hardware calculations and results export
+python lib/simulator/get_cost_from_lookup_table.py --strategy best_policy.npy --lookup_table model_table.npy \
+    --hardware_config_yaml hardware.yaml --layer_dims_yaml layer_dims.yaml --save_results results_dir/
+```
+
+This tool provides latency analysis, crossbar operation counts, and MVM breakdowns for quantized models on CIM hardware.
+
 ## Logging and Monitoring
 
 - Python logging for progress/status
