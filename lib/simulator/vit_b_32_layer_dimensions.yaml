@@ -1,0 +1,562 @@
+---
+##############################################################################
+# Copyright (C) 2025 Joel Klein
+# All Rights Reserved
+#
+# This work is licensed under the terms described in the LICENSE file
+# found in the root directory of this source tree.
+##############################################################################
+# ViT-B/32 layer dimensions for crossbar architecture simulation
+# Vision Transformer Base model with 32x32 patch size
+# Architecture: patch_size=32, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.0
+#
+# Format for each layer:
+#   type: "Conv2D"/"Dense"/"MatMul"
+#   output_dim: number of output channels/features/rows
+#   input_dim: input dimension (channels*height*width for Conv2D, features for Dense, input columns for MatMul)
+#   mvm_invocations: "output_height*output_width" for Conv2D layers, number of output columns for MatMul (omit for Dense)
+#   repeat_factor: (optional) number of times to repeat the layer (e.g., number of heads in a transformer block for MatMul)
+# MHA mapping to crossbars:
+# - QKV projection: Dense layer with mvm_invocations=50 (N tokens)
+# - Q@K^T: MatMul with mvm_invocations=50, repeat_factor=12 (N×d_k @ d_k×N, h heads)
+# - Attention@V: MatMul with mvm_invocations=50, repeat_factor=12 (N×N @ N×d_k, h heads)
+# - Output projection: Dense layer with mvm_invocations=50 (N tokens)
+# - MLP layers: Dense layers with mvm_invocations=50 (N tokens)
+layer_dimensions:
+  # Patch Embedding Layer
+  # Conv2D with kernel_size=32, stride=32 to convert 224x224x3 image to 49x768 patches
+  - type: Conv2D
+    output_dim: 768
+    input_dim: 32*32*3  # kernel area * in_channels = 3072
+    mvm_invocations: 7*7  # Output spatial dimensions: (224/32) × (224/32) = 7×7
+
+  # Transformer Encoder Block 1
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 2
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 3
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 4
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 5
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 6
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 7
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 8
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 9
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 10
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 11
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Transformer Encoder Block 12
+  # Multi-Head Self-Attention
+  # QKV projection: Single Dense layer 768 → 2304 (768*3 for Q,K,V combined)
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Attention computation 1: Q @ K^T = (K@Q^T)^T → attention weights
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+
+  # Attention computation 2: Attention weights @ V = (V^T @ Attention weights^T)^T → attention output
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection: concatenated heads → embed_dim
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # MLP (Feed-Forward Network)
+  # First linear layer: embed_dim → mlp_dim (expansion)
+  - type: Dense
+    output_dim: 3072  # mlp_dim = embed_dim × 4
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Second linear layer: mlp_dim → embed_dim (projection)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+
+  # Classification Head
+  # Final linear layer: embed_dim → num_classes
+  # Only processes the class token (first token in sequence)
+  - type: Dense
+    output_dim: 1000  # num_classes (ImageNet)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 1
+# Summary of ViT-B/32 architecture:
+# - Input: 224×224×3 image
+# - Patch embedding: 32×32 patches → 7×7 = 49 patches of 768 dimensions
+# - Add class token: 50 total sequence length
+# - 12 transformer blocks, each with:
+#   * Multi-head attention: 1 Dense (QKV proj) + 2 MatMul (attention comp) + 1 Dense (output proj)
+#   * MLP with hidden dimension 3072: 2 Dense layers
+# - Classification head: 768 → 1000 classes
+#
+# Layer structure per transformer block:
+# - 2 Dense layers (QKV projection + output projection)
+# - 2 MatMul layers (Q@K^T and Attention@V, each with repeat_factor=12 for 12 heads)
+# - 2 Dense layers (MLP expansion + projection)
+#
+# Total layers in this configuration:
+# - 1 Conv2D layer (patch embedding)
+# - 24 MatMul layers (2 per block × 12 blocks, each accounting for 12 heads via repeat_factor)
+# - 49 Dense layers (4 per block × 12 blocks + 1 classification head)
+# - Total: 74 computational layers

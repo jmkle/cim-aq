@@ -95,16 +95,23 @@ def create_crossbar_latency_table(
     for layer_idx in range(num_layers):
         # Get layer information
         layer_info = layer_dimensions_yaml[layer_idx]
+        layer_type = layer_info.get('type', 'Dense')
 
         m = parse_int(layer_info['output_dim'])
         n = parse_int(layer_info['input_dim'])
         mvm_invocations = parse_int(layer_info.get('mvm_invocations', 1))
         repeat_factor = parse_int(layer_info.get('repeat_factor', 1))
 
+        logger.debug(
+            f"Layer {layer_idx}: {layer_type}, m={m}, n={n}, "
+            f"mvm_invocations={mvm_invocations}, repeat_factor={repeat_factor}"
+        )
+
         # For each weight bit configuration
         for w_bit in range(1, max_bit + 1):
             # For each activation bit configuration
             for a_bit in range(1, max_bit + 1):
+                # Calculate number of MVM writes based on mapping type
                 if mapping_type == 'linear-scaling':
                     num_mvm_writes = np.ceil(m / crossbar_size_m * np.ceil(
                         w_bit / cell_resolution)) * np.ceil(
@@ -116,10 +123,16 @@ def create_crossbar_latency_table(
                             n / crossbar_size_n)
 
                 # Calculate the number of MVM executes
+                # For simple Dense layers: mvm_invocations = 1
+                # For Conv2D layers: mvm_invocations = O_H * O_W
+                # For MHA layers:
+                # - Dense layers (QKV, output proj, MLP): mvm_invocations = sequence_length
+                # - MatMul layers (Q@K^T, Attention@V): mvm_invocations = sequence_length
                 num_mvm_executes = mvm_invocations * num_mvm_writes * np.ceil(
                     a_bit / input_resolution)
 
                 # Calculate the total latency for this configuration
+                # repeat_factor = num_heads in MatMul for MHA (Q@K^T, Attention@V)
                 latency = repeat_factor * (
                     num_mvm_writes * mvm_write_latency +
                     num_mvm_executes * mvm_execute_latency)

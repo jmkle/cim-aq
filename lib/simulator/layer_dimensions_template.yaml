@@ -24,10 +24,18 @@
 # - input_dim = number of input features
 # - mvm_invocations not needed (default: 1)
 #
-# For matrix multiplication layers (m x k @ k x n = m x n):
-# - output_dim = number of output rows (m)
+# For matrix multiplication layers (m x k @ k x n = m x n)
+# - output_dim = number of input/output rows (m)
 # - input_dim = number of input columns (k)
 # - mvm_invocations = number of output columns (n)
+# - repeat_factor = number of times this operation is repeated (e.g., heads in attention)
+#
+# For Multi-Head Attention (MHA) layers specifically:
+# - QKV projection: Dense layer with mvm_invocations = sequence_length (N MVMs for N tokens)
+# - Q@K^T computation: MatMul with mvm_invocations = sequence_length, repeat_factor = num_heads (K is mapped to the crossbar and Q is decomposed into multiple rows as input column vectors)
+# - Attention@V computation: MatMul with mvm_invocations = sequence_length, repeat_factor = num_heads (V^T is mapped to the crossbar and Attention is decomposed into multiple rows as input column vectors)
+# - Output projection: Dense layer with mvm_invocations = sequence_length (N MVMs for N tokens)
+# - MLP layers: Dense layers with mvm_invocations = sequence_length (N MVMs for N tokens)
 layer_dimensions:
   # Example for a CNN network
 
@@ -88,10 +96,65 @@ layer_dimensions:
     input_dim: 128  # k
     mvm_invocations: 50  # n (number of independent MVM executions)
     repeat_factor: 12  # Number of times this layer is repeated (number of heads in a transformer block)
+
+  # Example Multi-Head Attention block (12 heads, embed_dim=768, sequence_length=50)
+  # QKV projection
+  - type: Dense
+    output_dim: 2304  # embed_dim * 3 = 768 * 3 (combined Q,K,V)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+  # Q@K^T computation (GeMM: N x d_k @ d_k x N = N x N)
+  # Store K on crossbars, use Q as input
+  - type: MatMul
+    output_dim: 50  # sequence_length (rows of K)
+    input_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (columns of K)
+    mvm_invocations: 50  # sequence_length (rows of Q)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Attention@V computation (GeMM: d_k x N @ N x N = d_k x N)
+  # Store V^T on crossbars, use Attention as input
+  - type: MatMul
+    output_dim: 64  # head_dim (d_k = embed_dim / num_heads = 768 / 12) (rows of V^T/output)
+    input_dim: 50  # sequence_length (columns of V^T)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens) (rows of Attention)
+    repeat_factor: 12  # num_heads (repeated h times)
+  # Output projection
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 768  # embed_dim (concatenated from all heads)
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+  # MLP layers in transformer
+  - type: Dense
+    output_dim: 3072  # mlp_dim (usually 4 * embed_dim)
+    input_dim: 768  # embed_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
+  - type: Dense
+    output_dim: 768  # embed_dim
+    input_dim: 3072  # mlp_dim
+    mvm_invocations: 50  # sequence_length (N MVMs for N tokens)
 # Note: The mvm_invocations field is used to calculate the number of MVM executions.
-# It is particularly relevant for Conv2D and MatMul layers where the GeMMs are divided into multiple MVM executions.
-# The cost calculation for MVM executions is as follows:
+# It is particularly relevant for Conv2D, MatMul, and MHA layers where GeMMs are divided into multiple MVM executions.
+#
+# The cost calculation for MVM writes and executions is as follows:
+# num_mvm_writes = ceil(delta * m / crossbar_size_m * ceil(w_bit / cell_resolution)) * ceil(n / crossbar_size_n) (delta = 1 for linear-scaling mode, delta = 2 for differential mode)
 # num_mvm_executes = mvm_invocations * num_mvm_writes * ceil(a_bit / input_resolution)
-# For Conv2D layers, the mvm_invocations is derived from the spatial dimensions of the output feature map.
-# For Dense layers, it is simply 1 since there is no spatial dimension.
-# For MatMul layers, the mvm_invocations is the number of columns in the output matrix.
+# total_latency = repeat_factor * (num_mvm_writes * write_latency + num_mvm_executes * execute_latency)
+#
+# For different layer types:
+# - Conv2D layers: mvm_invocations is derived from the spatial dimensions of the output feature map
+# - Dense layers (standard): mvm_invocations = 1 since there is no spatial dimension
+# - Dense layers (in MHA): mvm_invocations = sequence_length for sequential token processing
+# - MatMul layers (in MHA): mvm_invocations represents GeMM decomposition, repeat_factor represents heads
+#
+# For Multi-Head Attention specifically:
+# 1. QKV projection: Dense(768→2304), mvm_invocations=N (process N tokens sequentially)
+# 2. Q@K^T computation: Store K on crossbars, use Q as input, mvm_invocations=N, repeat_factor=h
+# 3. Attention@V: Store V^T on crossbars, use Attention as input, mvm_invocations=N, repeat_factor=h
+# 4. Output projection: Dense(768→768), mvm_invocations=N (process N tokens sequentially)
+# 5. MLP layers: Dense layers with mvm_invocations=N (process N tokens sequentially)
+#
+# Key insight: Both MHA MatMul operations use mvm_invocations=sequence_length by:
+# - Q@K^T: Store K(N×d_k) on crossbars, input Q^T(N×d_k) → output(N×N)
+# - Attention@V: Store V^T(d_k×N) on crossbars, input Attention^T(N×N) → output(N×d_k)
+# Note: The calculation on the crossbar the multiplication is transformed before offloading:
+#       - Q@K^T = ((Q@K^T)^T)^T = ((K^T)^T@Q^T)^T = (K@Q^T)^T = (output^T)^T = output
+#       - Attention@V = ((Attention@V)^T)^T = (V^T@Attention^T)^T = (output^T)^T = output
