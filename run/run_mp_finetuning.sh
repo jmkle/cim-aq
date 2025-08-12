@@ -18,8 +18,8 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 # 1. Fine-tune the model with the best mixed precision strategy
 # 2. Evaluate the final quantized model
 
-# Usage: bash run_mp_finetuning.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers]
-# Example: bash run_mp_finetuning.sh qvgg16 imagenet100 /path/to/dataset 30 /path/to/strategy.npy custom_run 0.0005 /path/to/uniform/model.pth.tar false cim-aq-quantization 1 256 32
+# Usage: bash run_mp_finetuning.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers] [amp_enable]
+# Example: bash run_mp_finetuning.sh qvgg16 imagenet100 /path/to/dataset 30 /path/to/strategy.npy custom_run 0.0005 /path/to/uniform/model.pth.tar false cim-aq-quantization 1 256 32 true
 
 # Default values
 QUANT_MODEL=${1:-"qvgg16"}                          # Quantized model architecture
@@ -35,11 +35,19 @@ WANDB_PROJECT=${10:-"cim-aq-quantization"}          # W&B project name
 GPU_ID=${11:-"1"}                                   # GPU ID(s) for CUDA_VISIBLE_DEVICES
 BATCH_SIZE=${12:-"256"}                             # Batch size for training
 NUM_WORKERS=${13:-"32"}                             # Number of DataLoader workers
+AMP_ENABLE=${14:-"true"}                            # Enable Automatic Mixed Precision
 
 if [[ "$WANDB_ENABLE" == "true" || "$WANDB_ENABLE" == "True" || "$WANDB_ENABLE" == "1" ]]; then
   WANDB_CLI_ARG="--wandb_enable"
 else
   WANDB_CLI_ARG=""
+fi
+
+# Convert AMP enable string to CLI argument
+if [[ "$AMP_ENABLE" == "true" || "$AMP_ENABLE" == "True" || "$AMP_ENABLE" == "1" ]]; then
+  AMP_CLI_ARG="--amp"
+else
+  AMP_CLI_ARG=""
 fi
 
 echo "========================================================="
@@ -50,6 +58,7 @@ echo "Strategy file: $STRATEGY_FILE"
 echo "Output suffix: $OUTPUT_SUFFIX"
 echo "Learning rate: $LEARNING_RATE"
 echo "GPU ID: $GPU_ID"
+echo "AMP (Automatic Mixed Precision): $AMP_ENABLE"
 echo "W&B logging: $WANDB_ENABLE"
 if [ "$WANDB_ENABLE" = "true" ]; then
   echo "W&B project: $WANDB_PROJECT"
@@ -102,7 +111,7 @@ python "${REPO_ROOT}/finetune.py" \
   --workers $NUM_WORKERS \
   --pretrained \
   --checkpoint "$CHECKPOINT_DIR" \
-  --amp \
+  $AMP_CLI_ARG \
   --gpu_id $GPU_ID \
   --strategy_file $STRATEGY_FILE \
   $WANDB_CLI_ARG \
@@ -138,7 +147,6 @@ if [ -t 0 ] && [ -w /dev/tty ]; then
       --workers $NUM_WORKERS \
       --resume $FINAL_MODEL_FILE \
       --gpu_id $GPU_ID \
-      --amp \
     --strategy_file $STRATEGY_FILE 2>&1 | tee /dev/tty)
 else
   # No interactive terminal (CI/batch) - capture output and show afterward
@@ -151,7 +159,6 @@ else
       --workers $NUM_WORKERS \
       --resume $FINAL_MODEL_FILE \
       --gpu_id $GPU_ID \
-      --amp \
     --strategy_file $STRATEGY_FILE 2>&1)
 
   # Show the captured output

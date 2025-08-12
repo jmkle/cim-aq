@@ -19,8 +19,8 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 # 2. Fine-tune the model with uniform 8-bit quantization using FP32 model as base
 # 3. Evaluate the 8-bit quantized model
 
-# Usage: bash run_int8_pretraining.sh [quant_model] [fp32_model] [dataset] [dataset_root] [uniform_8bit_epochs] [force_first_last_layer] [dataset_suffix] [learning_rate] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers]
-# Example: bash run_int8_pretraining.sh qvgg16 custom_vgg16 imagenet100 /path/to/dataset 10 true imagenet100 0.001 false cim-aq-quantization 1 256 32
+# Usage: bash run_int8_pretraining.sh [quant_model] [fp32_model] [dataset] [dataset_root] [uniform_8bit_epochs] [force_first_last_layer] [dataset_suffix] [learning_rate] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers] [amp_enable]
+# Example: bash run_int8_pretraining.sh qvgg16 custom_vgg16 imagenet100 /path/to/dataset 10 true imagenet100 0.001 false cim-aq-quantization 1 256 32 true
 
 # Default values
 QUANT_MODEL=${1:-"qvgg16"}                          # Quantized model architecture
@@ -36,6 +36,7 @@ WANDB_PROJECT=${10:-"cim-aq-quantization"}          # W&B project name
 GPU_ID=${11:-"1"}                                   # GPU ID(s) for CUDA_VISIBLE_DEVICES
 BATCH_SIZE=${12:-"256"}                             # Batch size for training
 NUM_WORKERS=${13:-"32"}                             # Number of DataLoader workers
+AMP_ENABLE=${14:-"true"}                            # Enable Automatic Mixed Precision
 
 # Convert string to boolean for Python scripts
 if [[ "$FORCE_FIRST_LAST_LAYER" == "true" || "$FORCE_FIRST_LAST_LAYER" == "True" || "$FORCE_FIRST_LAST_LAYER" == "1" ]]; then
@@ -50,6 +51,13 @@ else
   WANDB_CLI_ARG=""
 fi
 
+# Convert AMP enable string to CLI argument
+if [[ "$AMP_ENABLE" == "true" || "$AMP_ENABLE" == "True" || "$AMP_ENABLE" == "1" ]]; then
+  AMP_CLI_ARG="--amp"
+else
+  AMP_CLI_ARG=""
+fi
+
 echo "========================================================="
 echo "Starting INT8 model pretraining for $QUANT_MODEL"
 echo "Using $FP32_MODEL as base"
@@ -58,6 +66,7 @@ echo "8-bit pre-finetune epochs: $UNIFORM_8BIT_EPOCHS"
 echo "Force first/last layer high precision: $FORCE_FIRST_LAST_LAYER"
 echo "Learning rate: $LEARNING_RATE"
 echo "GPU ID: $GPU_ID"
+echo "AMP (Automatic Mixed Precision): $AMP_ENABLE"
 echo "W&B logging: $WANDB_ENABLE"
 if [ "$WANDB_ENABLE" = "true" ]; then
   echo "W&B project: $WANDB_PROJECT"
@@ -124,7 +133,7 @@ python "${REPO_ROOT}/finetune.py" \
   --pretrained \
   --checkpoint $UNIFORM_MODEL_DIR \
   --strategy_file $UNIFORM_STRATEGY_FILE \
-  --amp \
+  $AMP_CLI_ARG \
   --gpu_id $GPU_ID \
   $WANDB_CLI_ARG \
   --wandb_project "$WANDB_PROJECT"
@@ -158,7 +167,6 @@ if [ -t 0 ] && [ -w /dev/tty ]; then
       --batch_size $BATCH_SIZE \
       --workers $NUM_WORKERS \
       --resume $UNIFORM_MODEL_FILE \
-      --amp \
       --gpu_id $GPU_ID \
     --strategy_file $UNIFORM_STRATEGY_FILE 2>&1 | tee /dev/tty)
 else
@@ -171,7 +179,6 @@ else
       --batch_size $BATCH_SIZE \
       --workers $NUM_WORKERS \
       --resume $UNIFORM_MODEL_FILE \
-      --amp \
       --gpu_id $GPU_ID \
     --strategy_file $UNIFORM_STRATEGY_FILE 2>&1)
 

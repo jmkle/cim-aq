@@ -55,6 +55,9 @@ training:
 # Device Configuration
 device:
   gpu_id: all  # GPU ID(s) for CUDA_VISIBLE_DEVICES (e.g., "0", "0,1", "0,1,2,3", "all")
+# Automatic Mixed Precision (AMP) Configuration
+amp:
+  enable: false  # Disable AMP for all training steps (FP32 pretraining, INT8 pretraining, RL search, mixed precision fine-tuning) as this leads to constant evaluation accuracy
 # DataLoader Configuration
 dataloader:
   batch_size: 512  # Batch size for training/evaluation

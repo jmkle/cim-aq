@@ -108,7 +108,7 @@ print_workflow_config "$CONFIG_FILE" "$REPO_ROOT"
 echo ""
 echo "Starting Stage 1: Small Dataset Policy Discovery..."
 
-if ! execute_stage "Stage 1" "$SMALL_DATASET" "$SMALL_DATASET_ROOT" "$SCRIPT_DIR" "$REPO_ROOT" "false" "$BATCH_SIZE" "$NUM_WORKERS"; then
+if ! execute_stage "Stage 1" "$SMALL_DATASET" "$SMALL_DATASET_ROOT" "$SCRIPT_DIR" "$REPO_ROOT" "false" "$BATCH_SIZE" "$NUM_WORKERS" "$AMP_ENABLE"; then
   echo "❌ Stage 1 execution failed"
   exit 1
 fi
@@ -136,7 +136,7 @@ if [ "$ENABLE_LARGE_DATASET" = "true" ]; then
   echo ""
   echo "Starting Stage 2: Large Dataset Policy Application..."
 
-  if ! execute_stage "Stage 2" "$LARGE_DATASET" "$LARGE_DATASET_ROOT" "$SCRIPT_DIR" "$REPO_ROOT" "true" "$BATCH_SIZE" "$NUM_WORKERS"; then
+  if ! execute_stage "Stage 2" "$LARGE_DATASET" "$LARGE_DATASET_ROOT" "$SCRIPT_DIR" "$REPO_ROOT" "true" "$BATCH_SIZE" "$NUM_WORKERS" "$AMP_ENABLE"; then
     echo "❌ Stage 2 execution failed"
     exit 1
   fi

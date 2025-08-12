@@ -67,6 +67,9 @@ device:
 dataloader:
   batch_size: 256  # Batch size for training/evaluation
   num_workers: 32  # Number of DataLoader workers
+# AMP (Automatic Mixed Precision) Configuration
+amp:
+  enable: true  # Enable AMP for all training steps (FP32 pretraining, INT8 pretraining, RL search, mixed precision fine-tuning)
 # Logging Configuration
 logging:
   wandb:

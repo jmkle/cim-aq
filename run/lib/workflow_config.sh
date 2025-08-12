@@ -165,5 +165,13 @@ print_workflow_config() {
   else
     echo "└─ Cleanup enabled: NO"
   fi
+
+  echo ""
+  echo "⚡ AMP CONFIGURATION:"
+  if [ "$AMP_ENABLE" = "true" ]; then
+    echo "└─ Automatic Mixed Precision: ENABLED"
+  else
+    echo "└─ Automatic Mixed Precision: DISABLED"
+  fi
   echo "========================================================="
 }

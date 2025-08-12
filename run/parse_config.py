@@ -142,6 +142,10 @@ def parse_config(config_path: Path, repo_root: Path) -> None:
         else:
             cleanup_targets_str = str(cleanup_targets)
 
+        # AMP configuration
+        amp_config = config.get('amp', {})
+        amp_enable = str(amp_config.get('enable', True)).lower()
+
     except Exception as e:
         print(f"Error: Failed to extract configuration values: {e}")
         sys.exit(1)
@@ -186,6 +190,8 @@ def parse_config(config_path: Path, repo_root: Path) -> None:
     print(f'ENABLE_CLEANUP="{enable_cleanup}"')
     print(f'CLEANUP_FREQUENCY="{cleanup_frequency}"')
     print(f'CLEANUP_TARGETS="{cleanup_targets_str}"')
+    # AMP configuration variables
+    print(f'AMP_ENABLE="{amp_enable}"')
 
 
 def main() -> None:

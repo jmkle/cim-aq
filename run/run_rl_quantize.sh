@@ -18,8 +18,8 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 # 1. Generate hardware latency lookup table
 # 2. Run RL-based search for mixed precision using INT8 model as starting point
 
-# Usage: bash run_rl_quantize.sh [quant_model] [dataset] [dataset_root] [max_accuracy_drop] [min_bit] [max_bit] [train_episodes] [search_finetune_epochs] [force_first_last_layer] [consider_cell_resolution] [output_suffix] [finetune_lr] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers]
-# Example: bash run_rl_quantize.sh qvgg16 imagenet100 /path/to/dataset 1.0 2 8 600 3 true false accdrop1.0bit28 0.001 /path/to/uniform/model.pth.tar false cim-aq-quantization 1 256 32
+# Usage: bash run_rl_quantize.sh [quant_model] [dataset] [dataset_root] [max_accuracy_drop] [min_bit] [max_bit] [train_episodes] [search_finetune_epochs] [force_first_last_layer] [consider_cell_resolution] [output_suffix] [finetune_lr] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id] [batch_size] [num_workers] [amp_enable]
+# Example: bash run_rl_quantize.sh qvgg16 imagenet100 /path/to/dataset 1.0 2 8 600 3 true false accdrop1.0bit28 0.001 /path/to/uniform/model.pth.tar false cim-aq-quantization 1 256 32 true
 
 # Default values
 QUANT_MODEL=${1:-"qvgg16"}                          # Quantized model architecture
@@ -40,6 +40,7 @@ WANDB_PROJECT=${15:-"cim-aq-quantization"}          # W&B project name
 GPU_ID=${16:-"1"}                                   # GPU ID(s) for CUDA_VISIBLE_DEVICES
 BATCH_SIZE=${17:-"128"}                             # Batch size for RL training
 NUM_WORKERS=${18:-"32"}                             # Number of DataLoader workers
+AMP_ENABLE=${19:-"true"}                            # Enable Automatic Mixed Precision
 
 BASE_MODEL_NAME=${QUANT_MODEL/q/}
 
@@ -62,6 +63,13 @@ else
   WANDB_CLI_ARG=""
 fi
 
+# Convert AMP enable string to CLI argument
+if [[ "$AMP_ENABLE" == "true" || "$AMP_ENABLE" == "True" || "$AMP_ENABLE" == "1" ]]; then
+  AMP_CLI_ARG="--amp"
+else
+  AMP_CLI_ARG=""
+fi
+
 echo "========================================================="
 echo "Starting RL-based quantization search for $QUANT_MODEL"
 echo "Dataset: $DATASET at $DATASET_ROOT"
@@ -74,6 +82,7 @@ echo "Consider cell resolution: $CONSIDER_CELL_RESOLUTION"
 echo "Output suffix: $OUTPUT_SUFFIX"
 echo "Finetune learning rate: $FINETUNE_LR"
 echo "GPU ID: $GPU_ID"
+echo "AMP (Automatic Mixed Precision): $AMP_ENABLE"
 echo "W&B logging: $WANDB_ENABLE"
 if [ "$WANDB_ENABLE" = "true" ]; then
   echo "W&B project: $WANDB_PROJECT"
@@ -142,6 +151,7 @@ python "${REPO_ROOT}/rl_quantize.py" \
   --bsize 64 \
   --rmsize 128 \
   --gpu_id $GPU_ID \
+  $AMP_CLI_ARG \
   $WANDB_CLI_ARG \
   --wandb_project "$WANDB_PROJECT"
 
