@@ -196,7 +196,13 @@ def load_my_state_dict(model, state_dict):
             model_state[name].copy_(param_data)
 
 
-def train(train_loader, model, criterion, optimizer, epoch, device):
+def train(train_loader,
+          model,
+          criterion,
+          optimizer,
+          epoch,
+          device,
+          scaler=None):
     # switch to train mode
     model.train()
 
@@ -207,12 +213,6 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
     top5 = AverageMeter()
     end = time.time()
 
-    # Get scaler for AMP
-    if args.amp:
-        scaler = GradScaler()
-    else:
-        scaler = None
-
     pbar = tqdm(train_loader, desc=f'Training Epoch {epoch+1}')
     for inputs, targets in pbar:
         # measure data loading time
@@ -222,7 +222,7 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
 
         # compute output
         optimizer.zero_grad()
-        if args.amp:
+        if scaler is not None:
             with autocast(device_type=device.type):
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
@@ -436,6 +436,9 @@ if __name__ == '__main__':
         )
         exit()
 
+    # Create GradScaler once for AMP if enabled
+    scaler = GradScaler() if args.amp else None
+
     # Train and val
     for epoch in range(start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
@@ -444,7 +447,7 @@ if __name__ == '__main__':
 
         train_loss, train_acc, train_acc5 = train(train_loader, model,
                                                   criterion, optimizer, epoch,
-                                                  device)
+                                                  device, scaler)
         test_loss, test_acc, test_acc5 = test(val_loader, model, criterion,
                                               epoch, device)
 
