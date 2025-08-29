@@ -75,6 +75,7 @@ The current codebase is tested under the following environment:
 - Brevitas 0.12.0
 - ONNX 1.18.0
 - ONNX Optimizer 0.3.13
+- ONNX Script 0.4.0
 - torchvision 0.22.1
 - Matplotlib 3.10.5
 - SciPy 1.16.1
@@ -260,6 +261,7 @@ brevitas>=0.12.0
 matplotlib>=3.10.5
 onnx>=1.18.0
 onnxoptimizer>=0.3.13
+onnxscript>=0.4.0
 pillow>=11.3.0
 scipy>=1.16.1
 tensorboard>=2.20.0

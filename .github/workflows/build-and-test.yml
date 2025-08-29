@@ -82,6 +82,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          no-cache: ${{ github.event_name == 'schedule' }}  # If this workflow run was triggered by a schedule (github.event_name == 'schedule'), disable cache
           platforms: linux/amd64
       - name: Free up space after push
         run: |
