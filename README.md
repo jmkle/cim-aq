@@ -23,6 +23,9 @@ CIM-AQ is based on the [HAQ framework](https://github.com/mit-han-lab/haq), modi
 - `models/` - Model definitions (ResNet, VGG, etc.)
 - `run/` - Bash scripts and configs for running workflows
 - `data/` - Symlink to datasets
+- `results/` - MPQ policies from paper (organized by model)
+- `checkpoints/` - Saved checkpoints (FP32 / INT8 / finetuned)
+- `save/` - Search artifacts (per-search policies, logs, etc.)
 - `finetune.py` - Finetuning quantized models
 - `pretrain.py` - Pretraining models
 - `rl_quantize.py` - RL-based quantization search
@@ -65,6 +68,41 @@ This project is designed to run rootless, so you can also use `podman`. Make sur
 - `ghcr.io/jmkle/cim-aq:pr-<number>` (PRs, auto-cleaned)
 
 **GPU Requirements:** [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) + CUDA 12.9.1 compatible drivers
+
+## Results
+
+All mixed-precision quantization (MPQ) policies used for the experiments reported in the paper are included in the `results/` folder. Policies are stored as NumPy arrays (`.npy`) and are organized by model under `results/<model>/`. Every file name encodes the important metadata.
+
+### Filename pattern
+
+```bash
+policy-<model>-<constraint>-acc<XX>-rcell<Y>.npy
+```
+
+- `policy-` - prefix
+
+- `<model>` - model identifier (e.g., `resnet18`, `vgg16`, `vitb32`)
+
+- `<constraint>` - constraint variant; one of:
+
+  - `no_constraint` (No Constraint)
+  - `input_output_constraint` (Input/Output Constraint)
+  - `weight_constraint` (Weight Constraint)
+  - `both_constraints` (Both Constraints)
+
+- `acc<XX>` - allowed accuracy loss (zero-padded percentage, e.g., `acc01`, `acc05`, `acc10`)
+
+- `rcell<Y>` - cell resolution in bits (e.g., `rcell2`, `rcell4`)
+
+### Finetuning with stored policies
+
+To finetune using a stored policy, pass the `.npy` path as the `strategy_file` argument to the finetuning script. Example:
+
+```bash
+bash run/run_mp_finetune.sh qresnet18 imagenet /path/to/imagenet 30 \
+    results/resnet18/policy-resnet18-both_constraints-acc01-rcell4.npy \
+    reproduce_results 0.0005 /path/to/uniform_model.pth
+```
 
 ## Dependencies
 
@@ -138,12 +176,15 @@ bash run/run_full_workflow.sh /path/to/config.yaml
 This script will execute the following steps:
 
 1. **Stage 1**: Finding the best mixed precision strategy for a given model on smaller dataset (e.g., ImageNet100).
+
    1. **FP32 Pretraining**: Pretrain the model in full precision.
    1. **INT8 Pretraining**: Pretrain the model with INT8 quantization.
    1. **RL-based Quantization Search**: Perform the quantization search using reinforcement learning.
    1. **Mixed Precision Fine-tuning**: Fine-tune the model with the best mixed precision strategy.
    1. **Evaluation**: Evaluate the final quantized model.
+
 1. **Stage 2**: Finetuning the quantized model on the full dataset (e.g., ImageNet).
+
    1. **FP32 Pretraining**: Pretrain the model in full precision.
    1. **INT8 Pretraining**: Pretrain the model with INT8 quantization.
    1. **Mixed Precision Fine-tuning**: Fine-tune the model with the best mixed precision strategy.
@@ -228,7 +269,26 @@ python lib/simulator/get_cost_from_lookup_table.py --strategy best_policy.npy --
     --hardware_config_yaml hardware.yaml --layer_dims_yaml layer_dims.yaml --save_results results_dir/
 ```
 
+You can point `--strategy` at policies in `save/` (per-search artifacts) or at the `.npy` policies in `results/` (policies from the paper). Example:
+
+```bash
+python lib/simulator/get_cost_from_lookup_table.py \
+    --strategy results/resnet18/policy-resnet18-both_constraints-acc01-rcell4.npy \
+    --lookup_table lib/simulator/lookup_tables/qresnet18_batch1_latency_table.npy \
+    --hardware_config_yaml lib/simulator/hardware_config.yaml
+```
+
 This tool provides latency analysis, crossbar operation counts, and MVM breakdowns for quantized models on CIM hardware.
+
+**Note:** The lookup tables need to be generated first using the `lib/simulator/create_custom_latency_table.py` script. E.g., for ResNet18:
+
+```bash
+python lib/simulator/create_custom_latency_table.py \
+    --model qresnet18 --max_bit 8 \
+    --layer_dims_yaml lib/simulator/resnet18_layer_dimensions.yaml \
+    --hardware_config_yaml lib/simulator/hardware_config.yaml \
+    --output_path lib/simulator/lookup_tables/qresnet18_batch1_latency_table.npy
+```
 
 ## Logging and Monitoring
 

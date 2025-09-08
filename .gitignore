@@ -18,3 +18,6 @@ save*
 # Archives and Binary Files
 *.tar
 *.npy
+
+# Include .npy files in results folder
+!results/**/*.npy
