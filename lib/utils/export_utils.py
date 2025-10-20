@@ -188,7 +188,8 @@ def export_models(model: torch.nn.Module,
                              'output': {
                                  0: 'batch_size'
                              }
-                         })
+                         },
+                         dynamo=False)
         logger.info(f'Exported quantized model to {output_path}')
 
         # Strip initializers from ONNX model for Brevitas exports
@@ -209,7 +210,8 @@ def export_models(model: torch.nn.Module,
                               'output': {
                                   0: 'batch_size'
                               }
-                          })
+                          },
+                          dynamo=False)
         logger.info(f'Exported standard model to {output_path}')
 
     if wandb_run is not None:
