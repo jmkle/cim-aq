@@ -17,6 +17,21 @@ This repository contains the PyTorch implementation of CIM-AQ: CIM-aware Automat
 
 CIM-AQ is based on the [HAQ framework](https://github.com/mit-han-lab/haq), modifying it to support Computing-in-Memory (CIM) architectures. The HAQ framework has been modernized, and its reward function has been adapted to minimize the latency of quantized models on CIM hardware while maintaining accuracy. Furthermore, the CIM-AQ framework includes a CIM-specific latency model that estimates the latency of quantized models on CIM hardware. This model is used during the quantization search process. Additionally, the framework was updated to use layers from [Xilinx/Brevitas](https://github.com/xilinx/brevitas) for quantization instead of the custom-designed layers. This allows for a more flexible and efficient quantization process that leverages Brevitas's capabilities for quantized neural networks. Brevitas provides easier extensibility to additional layer types and quantization schemes. It also offers the significant advantage that the resulting quantized neural networks can be exported directly to ONNX format, eliminating the need for additional conversion steps.
 
+## Citation
+
+If you find this repository helpful, please consider citing the corresponding [paper](https://arxiv.org/abs/2601.21737):
+```
+@misc{pelke2026mpq,
+    title={Mixed-Precision Training and Compilation for RRAM-based Computing-in-Memory Accelerators}, 
+    author={Rebecca Pelke and Joel Klein and Jose Cubero-Cascante and Nils Bosbach and Jan Moritz Joseph and Rainer Leupers},
+    year={2026},
+    eprint={2601.21737},
+    archivePrefix={arXiv},
+    primaryClass={cs.LG},
+    url={https://arxiv.org/abs/2601.21737}, 
+}
+```
+
 ## Main folders and scripts
 
 - `lib/` - Core library code (env, RL, simulator, utils)
