@@ -17,6 +17,21 @@ This repository contains the PyTorch implementation of CIM-AQ: CIM-aware Automat
 
 CIM-AQ is based on the [HAQ framework](https://github.com/mit-han-lab/haq), modifying it to support Computing-in-Memory (CIM) architectures. The HAQ framework has been modernized, and its reward function has been adapted to minimize the latency of quantized models on CIM hardware while maintaining accuracy. Furthermore, the CIM-AQ framework includes a CIM-specific latency model that estimates the latency of quantized models on CIM hardware. This model is used during the quantization search process. Additionally, the framework was updated to use layers from [Xilinx/Brevitas](https://github.com/xilinx/brevitas) for quantization instead of the custom-designed layers. This allows for a more flexible and efficient quantization process that leverages Brevitas's capabilities for quantized neural networks. Brevitas provides easier extensibility to additional layer types and quantization schemes. It also offers the significant advantage that the resulting quantized neural networks can be exported directly to ONNX format, eliminating the need for additional conversion steps.
 
+## Citation
+
+If you find this repository helpful, please consider citing the corresponding [paper](https://arxiv.org/abs/2601.21737):
+```
+@misc{pelke2026mpq,
+    title={Mixed-Precision Training and Compilation for RRAM-based Computing-in-Memory Accelerators}, 
+    author={Rebecca Pelke and Joel Klein and Jose Cubero-Cascante and Nils Bosbach and Jan Moritz Joseph and Rainer Leupers},
+    year={2026},
+    eprint={2601.21737},
+    archivePrefix={arXiv},
+    primaryClass={cs.LG},
+    url={https://arxiv.org/abs/2601.21737}, 
+}
+```
+
 ## Main folders and scripts
 
 - `lib/` - Core library code (env, RL, simulator, utils)
@@ -99,7 +114,7 @@ policy-<model>-<constraint>-acc<XX>-rcell<Y>.npy
 To finetune using a stored policy, pass the `.npy` path as the `strategy_file` argument to the finetuning script. Example:
 
 ```bash
-bash run/run_mp_finetune.sh qresnet18 imagenet /path/to/imagenet 30 \
+bash run/run_mp_finetuning.sh qresnet18 imagenet /path/to/imagenet 30 \
     results/resnet18/policy-resnet18-both_constraints-acc01-rcell4.npy \
     reproduce_results 0.0005 /path/to/uniform_model.pth
 ```
@@ -243,7 +258,7 @@ The reinforcement learning quantization search can take a long time, depending o
 After searching, you can use the `.npy` strategy file to finetune and evaluate:
 
 ```bash
-bash run/run_mp_finetune.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id]
+bash run/run_mp_finetuning.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id]
 ```
 
 The `run_mp_finetuning.sh` script will finetune the model with the best mixed precision strategy found during the search phase. The finetuned model will be saved in the `checkpoints/<quant_model>_<output_suffix>/` directory.

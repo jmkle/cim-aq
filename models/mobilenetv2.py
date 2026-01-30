@@ -30,8 +30,10 @@ def conv_bn(inp: int,
             stride: int,
             conv_layer: Callable[..., nn.Module] = nn.Conv2d,
             input_quant: ActQuantType = CommonUint8ActQuant,
-            quantization_strategy: list[list[int]] = [],
+            quantization_strategy: list[list[int]] | None = None,
             max_bit: int = 8) -> nn.Sequential:
+    if quantization_strategy is None:
+        quantization_strategy = []
     if conv_layer == nn.Conv2d:
         return nn.Sequential(conv_layer(inp, oup, 3, stride, 1, bias=False),
                              nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
@@ -54,8 +56,10 @@ def conv_bn(inp: int,
 def conv_1x1_bn(inp: int,
                 oup: int,
                 conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-                quantization_strategy: list[list[int]] = [],
+                quantization_strategy: list[list[int]] | None = None,
                 max_bit: int = 8) -> nn.Sequential:
+    if quantization_strategy is None:
+        quantization_strategy = []
     if conv_layer == nn.Conv2d:
         return nn.Sequential(conv_layer(inp, oup, 1, 1, 0, bias=False),
                              nn.BatchNorm2d(oup), nn.ReLU6(inplace=True))
@@ -87,9 +91,11 @@ class InvertedResidual(nn.Module):
                  stride: int,
                  expand_ratio: int,
                  conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8) -> None:
         super(InvertedResidual, self).__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
         self.stride = stride
         assert stride in [1, 2]
 
@@ -220,9 +226,11 @@ class MobileNetV2(nn.Module):
                  width_mult: float = 1.0,
                  block: Callable[..., nn.Module] = InvertedResidual,
                  conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8) -> None:
         super(MobileNetV2, self).__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
         input_channel = 32
         last_channel = 1280
         inverted_residual_setting = [
@@ -339,9 +347,11 @@ def mobilenetv2(pretrained: bool = False, **kwargs) -> MobileNetV2:
 
 def qmobilenetv2(pretrained: bool = False,
                  num_classes: int = 1000,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8,
                  **kwargs) -> MobileNetV2:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = MobileNetV2(conv_layer=CommonQuantConv2d,
                         num_classes=num_classes,
                         quantization_strategy=quantization_strategy,

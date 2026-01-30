@@ -458,7 +458,8 @@ if __name__ == '__main__':
         ])
 
         # save model
-        is_best = test_acc > best_acc
+        is_first_epoch = (epoch == start_epoch and start_epoch == 0)
+        is_best = test_acc > best_acc or is_first_epoch
         if is_best:
             best_acc5 = test_acc5  # Update corresponding top-5 accuracy
         best_acc = max(test_acc, best_acc)

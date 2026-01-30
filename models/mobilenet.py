@@ -28,8 +28,10 @@ def conv_bn(inp: int,
             stride: int,
             conv_layer: Callable[..., nn.Module] = nn.Conv2d,
             input_quant: ActQuantType = CommonUint8ActQuant,
-            quantization_strategy: list[list[int]] = [],
+            quantization_strategy: list[list[int]] | None = None,
             max_bit: int = 8) -> nn.Sequential:
+    if quantization_strategy is None:
+        quantization_strategy = []
     if conv_layer == nn.Conv2d:
         return nn.Sequential(conv_layer(inp, oup, 3, stride, 1, bias=False),
                              nn.BatchNorm2d(oup), nn.ReLU(inplace=True))
@@ -53,8 +55,10 @@ def conv_dw(inp: int,
             oup: int,
             stride: int,
             conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-            quantization_strategy: list[list[int]] = [],
+            quantization_strategy: list[list[int]] | None = None,
             max_bit: int = 8) -> nn.Sequential:
+    if quantization_strategy is None:
+        quantization_strategy = []
     if conv_layer == nn.Conv2d:
         return nn.Sequential(
             conv_layer(inp, inp, 3, stride, 1, groups=inp, bias=False),
@@ -101,9 +105,11 @@ class MobileNet(nn.Module):
                  conv_layer: Callable[..., nn.Module] = nn.Conv2d,
                  profile: str = 'normal',
                  w_mul: float = 1.,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8) -> None:
         super(MobileNet, self).__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
 
         # original
         if profile == 'normal':
@@ -198,9 +204,11 @@ def mobilenet(pretrained: bool = False, **kwargs) -> MobileNet:
 
 
 def qmobilenet(pretrained: bool = False,
-               quantization_strategy: list[list[int]] = [],
+               quantization_strategy: list[list[int]] | None = None,
                max_bit: int = 8,
                **kwargs) -> MobileNet:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = MobileNet(conv_layer=CommonQuantConv2d,
                       quantization_strategy=quantization_strategy,
                       max_bit=max_bit,
