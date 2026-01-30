@@ -30,8 +30,10 @@ __all__ = [
 def make_layers(cfg: list[int | str],
                 batch_norm: bool = False,
                 conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-                quantization_strategy: list[list[int]] = [],
+                quantization_strategy: list[list[int]] | None = None,
                 max_bit: int = 8) -> nn.Sequential:
+    if quantization_strategy is None:
+        quantization_strategy = []
     layers = []
     in_channels = 3
     is_first_layer = True
@@ -88,9 +90,11 @@ class VGG(nn.Module):
                  init_weights: bool = True,
                  conv_layer: Callable[..., nn.Module] = nn.Conv2d,
                  linear_layer: Callable[..., nn.Module] = nn.Linear,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8) -> None:
         super(VGG, self).__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
         self.features = make_layers(
             cfg[cfg_key],
             batch_norm=batch_norm,
@@ -270,9 +274,11 @@ def custom_vgg19_bn(pretrained: bool = False, **kwargs) -> VGG19:
 
 def qvgg11(pretrained: bool = False,
            num_classes: int = 1000,
-           quantization_strategy: list[list[int]] = [],
+           quantization_strategy: list[list[int]] | None = None,
            max_bit: int = 8,
            **kwargs) -> VGG11:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = VGG11(batch_norm=False,
                   conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,
@@ -287,9 +293,11 @@ def qvgg11(pretrained: bool = False,
 
 def qvgg13(pretrained: bool = False,
            num_classes: int = 1000,
-           quantization_strategy: list[list[int]] = [],
+           quantization_strategy: list[list[int]] | None = None,
            max_bit: int = 8,
            **kwargs) -> VGG13:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = VGG13(batch_norm=False,
                   conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,
@@ -304,9 +312,11 @@ def qvgg13(pretrained: bool = False,
 
 def qvgg16(pretrained: bool = False,
            num_classes: int = 1000,
-           quantization_strategy: list[list[int]] = [],
+           quantization_strategy: list[list[int]] | None = None,
            max_bit: int = 8,
            **kwargs) -> VGG16:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = VGG16(batch_norm=False,
                   conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,
@@ -321,9 +331,11 @@ def qvgg16(pretrained: bool = False,
 
 def qvgg19(pretrained: bool = False,
            num_classes: int = 1000,
-           quantization_strategy: list[list[int]] = [],
+           quantization_strategy: list[list[int]] | None = None,
            max_bit: int = 8,
            **kwargs) -> VGG19:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = VGG19(batch_norm=False,
                   conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,
@@ -339,9 +351,11 @@ def qvgg19(pretrained: bool = False,
 # Quantized model functions with batch normalization
 def qvgg11_bn(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> VGG11:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = VGG11(batch_norm=True,
                   conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,
@@ -357,9 +371,11 @@ def qvgg11_bn(pretrained: bool = False,
 
 def qvgg13_bn(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> VGG13:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = VGG13(batch_norm=True,
                   conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,
@@ -375,9 +391,11 @@ def qvgg13_bn(pretrained: bool = False,
 
 def qvgg16_bn(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> VGG16:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = VGG16(batch_norm=True,
                   conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,
@@ -393,9 +411,11 @@ def qvgg16_bn(pretrained: bool = False,
 
 def qvgg19_bn(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> VGG19:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = VGG19(batch_norm=True,
                   conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,

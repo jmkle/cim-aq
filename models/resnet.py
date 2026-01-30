@@ -31,9 +31,11 @@ def conv3x3(in_planes: int,
             groups: int = 1,
             dilation: int = 1,
             conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-            quantization_strategy: list[list[int]] = [],
+            quantization_strategy: list[list[int]] | None = None,
             max_bit: int = 8) -> nn.Module:
     """3x3 convolution with padding"""
+    if quantization_strategy is None:
+        quantization_strategy = []
     if conv_layer == nn.Conv2d:
         return conv_layer(in_planes,
                           out_planes,
@@ -62,9 +64,11 @@ def conv1x1(in_planes: int,
             out_planes: int,
             stride: int = 1,
             conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-            quantization_strategy: list[list[int]] = [],
+            quantization_strategy: list[list[int]] | None = None,
             max_bit: int = 8) -> nn.Module:
     """1x1 convolution"""
+    if quantization_strategy is None:
+        quantization_strategy = []
     if conv_layer == nn.Conv2d:
         return conv_layer(in_planes,
                           out_planes,
@@ -96,9 +100,11 @@ class BasicBlock(nn.Module):
                  dilation: int = 1,
                  norm_layer: Callable[..., nn.Module] | None = None,
                  conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8) -> None:
         super(BasicBlock, self).__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         if groups != 1 or base_width != 64:
@@ -164,9 +170,11 @@ class Bottleneck(nn.Module):
                  dilation: int = 1,
                  norm_layer: Callable[..., nn.Module] | None = None,
                  conv_layer: Callable[..., nn.Module] = nn.Conv2d,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8) -> None:
         super(Bottleneck, self).__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         width = int(planes * (base_width / 64.)) * groups
@@ -233,9 +241,11 @@ class ResNet(nn.Module):
                  norm_layer: Callable[..., nn.Module] | None = None,
                  conv_layer: Callable[..., nn.Module] = nn.Conv2d,
                  linear_layer: Callable[..., nn.Module] = nn.Linear,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8) -> None:
         super(ResNet, self).__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
@@ -347,8 +357,10 @@ class ResNet(nn.Module):
                     blocks: int,
                     stride: int = 1,
                     dilate: bool = False,
-                    quantization_strategy: list[list[int]] = [],
+                    quantization_strategy: list[list[int]] | None = None,
                     max_bit: int = 8) -> nn.Sequential:
+        if quantization_strategy is None:
+            quantization_strategy = []
         norm_layer = self._norm_layer
         downsample = None
         previous_dilation = self.dilation
@@ -504,10 +516,12 @@ def custom_resnet152(pretrained: bool = False, **kwargs) -> ResNet152:
 # Quantized ResNet model functions
 def qresnet18(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> ResNet18:
     """Quantized ResNet-18 model"""
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ResNet18(conv_layer=CommonQuantConv2d,
                      linear_layer=CommonQuantLinear,
                      num_classes=num_classes,
@@ -522,10 +536,12 @@ def qresnet18(pretrained: bool = False,
 
 def qresnet34(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> ResNet34:
     """Quantized ResNet-34 model"""
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ResNet34(conv_layer=CommonQuantConv2d,
                      linear_layer=CommonQuantLinear,
                      num_classes=num_classes,
@@ -540,10 +556,12 @@ def qresnet34(pretrained: bool = False,
 
 def qresnet50(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> ResNet50:
     """Quantized ResNet-50 model"""
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ResNet50(conv_layer=CommonQuantConv2d,
                      linear_layer=CommonQuantLinear,
                      num_classes=num_classes,
@@ -558,10 +576,12 @@ def qresnet50(pretrained: bool = False,
 
 def qresnet101(pretrained: bool = False,
                num_classes: int = 1000,
-               quantization_strategy: list[list[int]] = [],
+               quantization_strategy: list[list[int]] | None = None,
                max_bit: int = 8,
                **kwargs) -> ResNet101:
     """Quantized ResNet-101 model"""
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ResNet101(conv_layer=CommonQuantConv2d,
                       linear_layer=CommonQuantLinear,
                       num_classes=num_classes,
@@ -576,10 +596,12 @@ def qresnet101(pretrained: bool = False,
 
 def qresnet152(pretrained: bool = False,
                num_classes: int = 1000,
-               quantization_strategy: list[list[int]] = [],
+               quantization_strategy: list[list[int]] | None = None,
                max_bit: int = 8,
                **kwargs) -> ResNet152:
     """Quantized ResNet-152 model"""
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ResNet152(conv_layer=CommonQuantConv2d,
                       linear_layer=CommonQuantLinear,
                       num_classes=num_classes,

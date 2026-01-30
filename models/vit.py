@@ -80,11 +80,13 @@ class MLP(torch.nn.Sequential):
         bias: bool = True,
         dropout: float = 0.0,
         linear_layer: Callable[..., nn.Module] = nn.Linear,
-        quantization_strategy: list[list[int]] = [],
+        quantization_strategy: list[list[int]] | None = None,
         max_bit: int = 8,
     ):
         # The addition of `norm_layer` is inspired from the implementation of TorchMultimodal:
         # https://github.com/facebookresearch/multimodal/blob/5dec8a/torchmultimodal/modules/layers/mlp.py
+        if quantization_strategy is None:
+            quantization_strategy = []
         params = {} if inplace is None else {"inplace": inplace}
 
         layers = []
@@ -135,7 +137,7 @@ class MLPBlock(MLP):
                  mlp_dim: int,
                  dropout: float,
                  linear_layer: Callable[..., nn.Module] = nn.Linear,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8):
         super().__init__(in_dim, [mlp_dim, in_dim],
                          activation_layer=nn.GELU,
@@ -198,9 +200,11 @@ class EncoderBlock(nn.Module):
                  multiheadattention_layer: Callable[
                      ..., nn.Module] = nn.MultiheadAttention,
                  linear_layer: Callable[..., nn.Module] = nn.Linear,
-                 quantization_strategy: list[list[int]] = [],
+                 quantization_strategy: list[list[int]] | None = None,
                  max_bit: int = 8):
         super().__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
         self.num_heads = num_heads
 
         # Attention and MLP blocks
@@ -275,10 +279,12 @@ class Encoder(nn.Module):
         multiheadattention_layer: Callable[...,
                                            nn.Module] = nn.MultiheadAttention,
         linear_layer: Callable[..., nn.Module] = nn.Linear,
-        quantization_strategy: list[list[int]] = [],
+        quantization_strategy: list[list[int]] | None = None,
         max_bit: int = 8,
     ):
         super().__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
         # Note that batch_size is on the first dim because
         # we have batch_first=True in nn.MultiAttention() by default
         self.pos_embedding = nn.Parameter(
@@ -329,10 +335,12 @@ class ViT(nn.Module):
         linear_layer: Callable[..., nn.Module] = nn.Linear,
         multiheadattention_layer: Callable[...,
                                            nn.Module] = nn.MultiheadAttention,
-        quantization_strategy: list[list[int]] = [],
+        quantization_strategy: list[list[int]] | None = None,
         max_bit: int = 8,
     ):
         super(ViT, self).__init__()
+        if quantization_strategy is None:
+            quantization_strategy = []
 
         if variant not in ViT_CONFIGS:
             raise ValueError(
@@ -686,9 +694,11 @@ def custom_vit_h_14(pretrained: bool = False, **kwargs) -> ViT_H_14:
 # Quantized ViT model functions
 def qvit_xs(pretrained: bool = False,
             num_classes: int = 1000,
-            quantization_strategy: list[list[int]] = [],
+            quantization_strategy: list[list[int]] | None = None,
             max_bit: int = 8,
             **kwargs) -> ViT_XS:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ViT_XS(conv_layer=CommonQuantConv2d,
                    linear_layer=CommonQuantLinear,
                    multiheadattention_layer=CommonQuantMultiheadAttention,
@@ -703,9 +713,11 @@ def qvit_xs(pretrained: bool = False,
 
 def qvit_s(pretrained: bool = False,
            num_classes: int = 1000,
-           quantization_strategy: list[list[int]] = [],
+           quantization_strategy: list[list[int]] | None = None,
            max_bit: int = 8,
            **kwargs) -> ViT_S:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ViT_S(conv_layer=CommonQuantConv2d,
                   linear_layer=CommonQuantLinear,
                   multiheadattention_layer=CommonQuantMultiheadAttention,
@@ -720,9 +732,11 @@ def qvit_s(pretrained: bool = False,
 
 def qvit_b_16(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> ViT_B_16:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ViT_B_16(conv_layer=CommonQuantConv2d,
                      linear_layer=CommonQuantLinear,
                      multiheadattention_layer=CommonQuantMultiheadAttention,
@@ -738,9 +752,11 @@ def qvit_b_16(pretrained: bool = False,
 
 def qvit_b_32(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> ViT_B_32:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ViT_B_32(conv_layer=CommonQuantConv2d,
                      linear_layer=CommonQuantLinear,
                      multiheadattention_layer=CommonQuantMultiheadAttention,
@@ -756,9 +772,11 @@ def qvit_b_32(pretrained: bool = False,
 
 def qvit_l_16(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> ViT_L_16:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ViT_L_16(conv_layer=CommonQuantConv2d,
                      linear_layer=CommonQuantLinear,
                      multiheadattention_layer=CommonQuantMultiheadAttention,
@@ -774,9 +792,11 @@ def qvit_l_16(pretrained: bool = False,
 
 def qvit_l_32(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> ViT_L_32:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ViT_L_32(conv_layer=CommonQuantConv2d,
                      linear_layer=CommonQuantLinear,
                      multiheadattention_layer=CommonQuantMultiheadAttention,
@@ -792,9 +812,11 @@ def qvit_l_32(pretrained: bool = False,
 
 def qvit_h_14(pretrained: bool = False,
               num_classes: int = 1000,
-              quantization_strategy: list[list[int]] = [],
+              quantization_strategy: list[list[int]] | None = None,
               max_bit: int = 8,
               **kwargs) -> ViT_H_14:
+    if quantization_strategy is None:
+        quantization_strategy = []
     model = ViT_H_14(conv_layer=CommonQuantConv2d,
                      linear_layer=CommonQuantLinear,
                      multiheadattention_layer=CommonQuantMultiheadAttention,
