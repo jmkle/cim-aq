@@ -583,11 +583,11 @@ if __name__ == "__main__":
                         help='finetune gamma')
     parser.add_argument('--finetune_flag',
                         default=True,
-                        type=bool,
+                        action=argparse.BooleanOptionalAction,
                         help='whether to finetune')
     parser.add_argument('--use_top5',
                         default=False,
-                        type=bool,
+                        action=argparse.BooleanOptionalAction,
                         help='whether to use top5 acc in reward')
     parser.add_argument('--train_size',
                         default=20000,
