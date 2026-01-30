@@ -114,7 +114,7 @@ policy-<model>-<constraint>-acc<XX>-rcell<Y>.npy
 To finetune using a stored policy, pass the `.npy` path as the `strategy_file` argument to the finetuning script. Example:
 
 ```bash
-bash run/run_mp_finetune.sh qresnet18 imagenet /path/to/imagenet 30 \
+bash run/run_mp_finetuning.sh qresnet18 imagenet /path/to/imagenet 30 \
     results/resnet18/policy-resnet18-both_constraints-acc01-rcell4.npy \
     reproduce_results 0.0005 /path/to/uniform_model.pth
 ```
@@ -258,7 +258,7 @@ The reinforcement learning quantization search can take a long time, depending o
 After searching, you can use the `.npy` strategy file to finetune and evaluate:
 
 ```bash
-bash run/run_mp_finetune.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id]
+bash run/run_mp_finetuning.sh [quant_model] [dataset] [dataset_root] [finetune_epochs] [strategy_file] [output_suffix] [learning_rate] [uniform_model_file] [wandb_enable] [wandb_project] [gpu_id]
 ```
 
 The `run_mp_finetuning.sh` script will finetune the model with the best mixed precision strategy found during the search phase. The finetuned model will be saved in the `checkpoints/<quant_model>_<output_suffix>/` directory.
