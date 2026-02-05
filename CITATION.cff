@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: If you find this repository helpful, please consider citing the corresponding paper as below.
+preferred-citation:
+  authors:
+    - family-names: Pelke
+      given-names: Rebecca
+    - family-names: Klein
+      given-names: Joel
+    - family-names: Cubero-Cascante
+      given-names: Jose
+    - family-names: Bosbach
+      given-names: Nils
+    - family-names: Joseph
+      given-names: Jan Moritz
+    - family-names: Leupers
+      given-names: Rainer
+  identifiers:
+    - type: url
+      value: https://arxiv.org/abs/2601.21737
+  title: >-
+    Mixed-Precision Training and Compilation for RRAM-based Computing-in-Memory
+    Accelerators
+  url: https://arxiv.org/abs/2601.21737
+  year: 2026
+  type: article
