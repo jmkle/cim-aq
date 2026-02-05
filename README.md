@@ -12,6 +12,7 @@ here: https://github.com/mit-han-lab/haq/
 
 [![Style](https://github.com/jmkle/cim-aq/actions/workflows/style.yml/badge.svg)](https://github.com/jmkle/cim-aq/actions/workflows/style.yml)
 [![Build and Test](https://github.com/jmkle/cim-aq/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/jmkle/cim-aq/actions/workflows/build-and-test.yml)
+[![arXiv](https://img.shields.io/badge/arXiv-2601.21737-b31b1b.svg)](https://arxiv.org/abs/2601.21737)
 
 This repository contains the PyTorch implementation of CIM-AQ: CIM-aware Automated Quantization with Mixed Precision.
 
@@ -20,6 +21,7 @@ CIM-AQ is based on the [HAQ framework](https://github.com/mit-han-lab/haq), modi
 ## Citation
 
 If you find this repository helpful, please consider citing the corresponding [paper](https://arxiv.org/abs/2601.21737):
+
 ```
 @misc{pelke2026mpq,
     title={Mixed-Precision Training and Compilation for RRAM-based Computing-in-Memory Accelerators}, 
