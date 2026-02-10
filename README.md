@@ -22,7 +22,7 @@ CIM-AQ is based on the [HAQ framework](https://github.com/mit-han-lab/haq), modi
 
 If you find this repository helpful, please consider citing the corresponding [paper](https://arxiv.org/abs/2601.21737):
 
-```
+```bibtex
 @misc{pelke2026mpq,
     title={Mixed-Precision Training and Compilation for RRAM-based Computing-in-Memory Accelerators}, 
     author={Rebecca Pelke and Joel Klein and Jose Cubero-Cascante and Nils Bosbach and Jan Moritz Joseph and Rainer Leupers},
@@ -347,3 +347,9 @@ torchvision>=0.22.1
 tqdm>=4.67.1
 wandb>=0.21.0
 ```
+
+## Contributing
+
+This project uses the Developer Certificate of Origin (DCO). Every commit must
+include a Signed-off-by line. See [CONTRIBUTING.md](CONTRIBUTING.md) and
+[DCO.md](DCO.md) for details.
