@@ -4,22 +4,41 @@ preferred-citation:
   authors:
     - family-names: Pelke
       given-names: Rebecca
+      orcid: https://orcid.org/0000-0001-5156-7072
     - family-names: Klein
       given-names: Joel
+      orcid: https://orcid.org/0009-0002-2828-4802
     - family-names: Cubero-Cascante
-      given-names: Jose
+      given-names: José
+      orcid: https://orcid.org/0000-0001-9575-0856
     - family-names: Bosbach
       given-names: Nils
+      orcid: https://orcid.org/0000-0002-2284-949X
     - family-names: Joseph
       given-names: Jan Moritz
+      orcid: https://orcid.org/0000-0001-8669-1225
     - family-names: Leupers
       given-names: Rainer
+      orcid: https://orcid.org/0000-0002-6735-3033
   identifiers:
+    - type: doi
+      value: 10.23919/date69613.2026.11539262
     - type: url
-      value: https://arxiv.org/abs/2601.21737
+      value: http://doi.org/10.23919/DATE69613.2026.11539262 
   title: >-
     Mixed-Precision Training and Compilation for RRAM-based Computing-in-Memory
     Accelerators
-  url: https://arxiv.org/abs/2601.21737
+  conference:
+    name: 2026 Design, Automation & Test in Europe Conference (DATE)
+    location: Verona, Italy
+    date-start: 2026-04-20
+    date-end: 2026-04-22
+  pages: 1-7
+  publisher:
+    name: IEEE
+  url: https://doi.org/10.23919/date69613.2026.11539262
+  doi: 10.23919/date69613.2026.11539262
+  date-published: 2026-04-20
   year: 2026
-  type: article
+  month: 4
+  type: conference-paper
