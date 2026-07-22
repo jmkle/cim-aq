@@ -8,7 +8,7 @@
 # here https://github.com/mit-han-lab/haq/                                   #
 ##############################################################################
 
-brevitas>=0.12.0
+brevitas==0.12.1
 matplotlib>=3.10.5
 onnx>=1.18.0
 onnxoptimizer>=0.3.13
